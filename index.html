@@ -63,6 +63,8 @@
             cursor: pointer;
             border-bottom: 3px solid transparent;
             transition: all 0.3s;
+            text-decoration: none;
+            text-align: center;
         }
         
         .nav-btn.active {
@@ -191,9 +193,19 @@
             color: white;
         }
         
+        .btn-warning {
+            background: #ff9f1c;
+            color: white;
+        }
+        
         .btn-sm {
             padding: 5px 10px;
             font-size: 12px;
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 5px;
         }
         
         /* Planning Items */
@@ -427,7 +439,7 @@
             }
             
             .nav-btn {
-                min-width: 50px;
+                min-width: 45px;
                 padding: 10px 3px;
             }
             
@@ -436,7 +448,17 @@
             }
             
             .nav-btn .nav-text {
-                font-size: 9px;
+                font-size: 8px;
+            }
+            
+            .btn-group {
+                flex-direction: column;
+                gap: 3px;
+            }
+            
+            .btn-group .btn {
+                padding: 4px 8px;
+                font-size: 11px;
             }
         }
         
@@ -567,6 +589,10 @@
                 <span class="nav-icon">📈</span>
                 <span class="nav-text">Laporan</span>
             </button>
+            <a href="usaha.html" class="nav-btn">
+                <span class="nav-icon">🏢</span>
+                <span class="nav-text">Usaha</span>
+            </a>
             <button class="nav-btn" data-page="settings">
                 <span class="nav-icon">⚙️</span>
                 <span class="nav-text">Settings</span>
@@ -760,7 +786,7 @@
             
             <div class="card" style="margin-top: 15px;">
                 <h2>Informasi Aplikasi</h2>
-                <p><strong>Versi:</strong> 1.1</p>
+                <p><strong>Versi:</strong> 1.2</p>
                 <p><strong>Tahun Aktif:</strong> <span id="currentYear">2024</span></p>
                 <p><strong>Jumlah Planning:</strong> <span id="planningCount">0</span></p>
                 <p><strong>Jumlah Transaksi:</strong> <span id="transactionCount">0</span></p>
@@ -773,11 +799,12 @@
     <div class="modal" id="planningModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>Tambah Planning</h3>
+                <h3 id="planningModalTitle">Tambah Planning</h3>
                 <button class="close-btn" id="closePlanningBtn">×</button>
             </div>
             <div class="modal-body">
                 <form id="planningForm">
+                    <input type="hidden" id="editingPlanningId">
                     <div class="form-group">
                         <label>Nama Planning</label>
                         <input type="text" id="planningName" required placeholder="Contoh: Transport, Makan, Tabungan">
@@ -803,7 +830,7 @@
                         <textarea id="planningDesc" rows="2"></textarea>
                     </div>
                     
-                    <button type="submit" class="btn btn-primary btn-block">Simpan Planning</button>
+                    <button type="submit" class="btn btn-primary btn-block" id="planningSubmitBtn">Simpan Planning</button>
                 </form>
             </div>
         </div>
@@ -851,7 +878,7 @@
         
         // Data structure dengan support multi-bulan
         let appData = {
-            version: "1.1",
+            version: "1.2",
             currentYear: new Date().getFullYear(),
             currentMonth: new Date().getMonth(),
             planningTemplates: [], // Template planning untuk semua bulan
@@ -1210,7 +1237,10 @@
                         ${progressHtml}
                         ${statusText}
                     </div>
-                    <button class="btn btn-danger btn-sm" onclick="deletePlanning('${planning.id}')">Hapus</button>
+                    <div class="btn-group">
+                        <button class="btn btn-warning btn-sm" onclick="editPlanning('${planning.id}')">Edit</button>
+                        <button class="btn btn-danger btn-sm" onclick="deletePlanning('${planning.id}')">Hapus</button>
+                    </div>
                 `;
                 container.appendChild(div);
             });
@@ -1536,34 +1566,58 @@
             }
         }
         
+        // Edit planning function
+        window.editPlanning = function(planningId) {
+            const planning = getCurrentMonthPlanning().find(p => p.id === planningId);
+            if (!planning) return;
+            
+            // Find template
+            const templateIndex = appData.planningTemplates.findIndex(t => t.id === planning.templateId);
+            if (templateIndex === -1) return;
+            
+            // Fill form with existing data
+            document.getElementById('planningModalTitle').textContent = 'Edit Planning';
+            document.getElementById('editingPlanningId').value = planning.id;
+            document.getElementById('planningName').value = planning.name;
+            document.getElementById('planningType').value = planning.type;
+            document.getElementById('planningTarget').value = planning.target;
+            document.getElementById('planningDesc').value = planning.description || '';
+            document.getElementById('planningSubmitBtn').textContent = 'Update Planning';
+            
+            // Show modal
+            document.getElementById('planningModal').classList.add('active');
+        };
+        
         // ========== EVENT HANDLERS ==========
         
         // Navigation
         document.querySelectorAll('.nav-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                // Remove active from all
-                document.querySelectorAll('.nav-btn').forEach(b => {
-                    b.classList.remove('active');
+            if (btn.getAttribute('data-page')) {
+                btn.addEventListener('click', function() {
+                    // Remove active from all
+                    document.querySelectorAll('.nav-btn').forEach(b => {
+                        b.classList.remove('active');
+                    });
+                    document.querySelectorAll('.page').forEach(p => {
+                        p.classList.remove('active');
+                    });
+                    
+                    // Add active to clicked
+                    this.classList.add('active');
+                    const pageId = this.getAttribute('data-page');
+                    document.getElementById(pageId).classList.add('active');
+                    
+                    // Refresh page content
+                    if (pageId === 'dashboard') {
+                        updateDashboard();
+                    } else if (pageId === 'planning') {
+                        updatePlanningList();
+                        updateIncomeList();
+                    } else if (pageId === 'reports') {
+                        updateYearSelect();
+                    }
                 });
-                document.querySelectorAll('.page').forEach(p => {
-                    p.classList.remove('active');
-                });
-                
-                // Add active to clicked
-                this.classList.add('active');
-                const pageId = this.getAttribute('data-page');
-                document.getElementById(pageId).classList.add('active');
-                
-                // Refresh page content
-                if (pageId === 'dashboard') {
-                    updateDashboard();
-                } else if (pageId === 'planning') {
-                    updatePlanningList();
-                    updateIncomeList();
-                } else if (pageId === 'reports') {
-                    updateYearSelect();
-                }
-            });
+            }
         });
         
         // Month navigation
@@ -1587,6 +1641,10 @@
         
         // Add planning
         document.getElementById('addPlanningBtn').addEventListener('click', function() {
+            document.getElementById('planningModalTitle').textContent = 'Tambah Planning';
+            document.getElementById('editingPlanningId').value = '';
+            document.getElementById('planningForm').reset();
+            document.getElementById('planningSubmitBtn').textContent = 'Simpan Planning';
             document.getElementById('planningModal').classList.add('active');
         });
         
@@ -1595,7 +1653,7 @@
             document.getElementById('planningModal').classList.remove('active');
         });
         
-        // Save planning (template)
+        // Save or update planning
         document.getElementById('planningForm').addEventListener('submit', function(e) {
             e.preventDefault();
             
@@ -1603,47 +1661,74 @@
             const planningType = document.getElementById('planningType').value;
             const planningTarget = parseInt(document.getElementById('planningTarget').value);
             const planningDesc = document.getElementById('planningDesc').value.trim();
+            const editingPlanningId = document.getElementById('editingPlanningId').value;
             
             if (planningTarget <= 0) {
                 alert('Target harus lebih dari 0!');
                 return;
             }
             
-            const template = {
-                id: 'template_' + Date.now(),
-                name: planningName,
-                type: planningType,
-                target: planningTarget,
-                description: planningDesc
-            };
-            
-            appData.planningTemplates.push(template);
-            
-            // Update current month planning
             const monthKey = getCurrentMonthKey();
-            const monthlyPlanning = {
-                id: template.id + '_' + monthKey,
-                templateId: template.id,
-                name: planningName,
-                type: planningType,
-                target: planningTarget,
-                description: planningDesc,
-                used: 0,
-                collected: 0
-            };
             
-            if (!appData.monthlyPlanning[monthKey]) {
-                appData.monthlyPlanning[monthKey] = [];
+            if (editingPlanningId) {
+                // Editing existing planning
+                const planningIndex = getCurrentMonthPlanning().findIndex(p => p.id === editingPlanningId);
+                if (planningIndex !== -1) {
+                    // Update monthly planning
+                    appData.monthlyPlanning[monthKey][planningIndex].name = planningName;
+                    appData.monthlyPlanning[monthKey][planningIndex].type = planningType;
+                    appData.monthlyPlanning[monthKey][planningIndex].target = planningTarget;
+                    appData.monthlyPlanning[monthKey][planningIndex].description = planningDesc;
+                    
+                    // Update template
+                    const templateId = appData.monthlyPlanning[monthKey][planningIndex].templateId;
+                    const templateIndex = appData.planningTemplates.findIndex(t => t.id === templateId);
+                    if (templateIndex !== -1) {
+                        appData.planningTemplates[templateIndex].name = planningName;
+                        appData.planningTemplates[templateIndex].type = planningType;
+                        appData.planningTemplates[templateIndex].target = planningTarget;
+                        appData.planningTemplates[templateIndex].description = planningDesc;
+                    }
+                    
+                    showToast(`Planning "${planningName}" berhasil diperbarui!`);
+                }
+            } else {
+                // Adding new planning
+                const template = {
+                    id: 'template_' + Date.now(),
+                    name: planningName,
+                    type: planningType,
+                    target: planningTarget,
+                    description: planningDesc
+                };
+                
+                appData.planningTemplates.push(template);
+                
+                // Update current month planning
+                const monthlyPlanning = {
+                    id: template.id + '_' + monthKey,
+                    templateId: template.id,
+                    name: planningName,
+                    type: planningType,
+                    target: planningTarget,
+                    description: planningDesc,
+                    used: 0,
+                    collected: 0
+                };
+                
+                if (!appData.monthlyPlanning[monthKey]) {
+                    appData.monthlyPlanning[monthKey] = [];
+                }
+                appData.monthlyPlanning[monthKey].push(monthlyPlanning);
+                
+                showToast(`Planning "${planningName}" berhasil ditambahkan!`);
             }
-            appData.monthlyPlanning[monthKey].push(monthlyPlanning);
             
             saveData();
             
             // Reset form and close modal
             this.reset();
             document.getElementById('planningModal').classList.remove('active');
-            
-            showToast(`Planning "${planningName}" berhasil ditambahkan!`);
         });
         
         // Add income
