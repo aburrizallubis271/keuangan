@@ -262,6 +262,10 @@
             font-size: 14px;
         }
         
+        .trans-item:hover {
+            background-color: #f8f9fa;
+        }
+        
         .trans-amount.income {
             color: #2ec4b6;
             font-weight: bold;
@@ -561,6 +565,23 @@
             width: auto;
             min-width: 120px;
         }
+        
+        /* Transaction Action Buttons */
+        .trans-actions {
+            display: flex;
+            gap: 5px;
+            margin-top: 5px;
+        }
+        
+        .trans-actions .btn-sm {
+            padding: 2px 6px;
+            font-size: 11px;
+        }
+        
+        /* Currency Input */
+        .currency-input {
+            text-align: right;
+        }
     </style>
 </head>
 <body>
@@ -667,8 +688,9 @@
         <!-- Transactions -->
         <div class="page" id="transactions">
             <div class="card">
-                <h2>Tambah Transaksi</h2>
+                <h2 id="transactionFormTitle">Tambah Transaksi</h2>
                 <form id="transactionForm">
+                    <input type="hidden" id="editingTransactionId">
                     <div class="form-group">
                         <label>Jenis</label>
                         <select id="transType" required>
@@ -687,7 +709,7 @@
                     
                     <div class="form-group">
                         <label>Jumlah (Rp)</label>
-                        <input type="number" id="transAmount" required min="0">
+                        <input type="text" id="transAmount" class="currency-input" required placeholder="Contoh: 800.000">
                         <small id="balanceInfo" style="color: #666; display: none;"></small>
                     </div>
                     
@@ -701,7 +723,8 @@
                         <input type="date" id="transDate" required>
                     </div>
                     
-                    <button type="submit" class="btn btn-primary btn-block">Simpan Transaksi</button>
+                    <button type="submit" class="btn btn-primary btn-block" id="transactionSubmitBtn">Simpan Transaksi</button>
+                    <button type="button" class="btn btn-warning btn-block" id="cancelEditBtn" style="display: none; margin-top: 8px;">Batal Edit</button>
                 </form>
             </div>
             
@@ -822,7 +845,7 @@
                     
                     <div class="form-group">
                         <label>Target Bulanan (Rp)</label>
-                        <input type="number" id="planningTarget" required min="0" placeholder="500000">
+                        <input type="text" id="planningTarget" class="currency-input" required placeholder="500.000">
                     </div>
                     
                     <div class="form-group">
@@ -851,7 +874,7 @@
                     
                     <div class="form-group">
                         <label>Jumlah per Bulan (Rp)</label>
-                        <input type="number" id="incomeAmount" required min="0" placeholder="3000000">
+                        <input type="text" id="incomeAmount" class="currency-input" required placeholder="3.000.000">
                     </div>
                     
                     <div class="form-group">
@@ -1049,6 +1072,47 @@
         // Hide loading
         function hideLoading() {
             document.getElementById('loadingOverlay').classList.remove('active');
+        }
+        
+        // Format currency input with dots
+        function formatCurrencyInput(value) {
+            // Remove all non-digit characters except dot
+            let cleanValue = value.replace(/[^\d]/g, '');
+            
+            // If empty, return empty
+            if (cleanValue === '') return '';
+            
+            // Convert to number and format with dots
+            let numberValue = parseInt(cleanValue);
+            if (isNaN(numberValue)) return '';
+            
+            // Format with thousand separators
+            return numberValue.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+        }
+        
+        // Parse formatted currency to number
+        function parseCurrency(formatted) {
+            if (!formatted || formatted === '') return 0;
+            // Remove all dots and convert to number
+            const clean = formatted.toString().replace(/\./g, '');
+            return parseInt(clean) || 0;
+        }
+        
+        // Format currency for display
+        function formatCurrency(amount) {
+            if (typeof amount !== 'number' || isNaN(amount)) {
+                amount = 0;
+            }
+            return 'Rp ' + Math.round(amount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+        }
+        
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleDateString('id-ID', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric'
+            });
         }
         
         // Update display
@@ -1376,6 +1440,10 @@
                     <div>
                         <strong>${planning.name}</strong><br>
                         <small>${trans.description || '-'} • ${formatDate(trans.date)}</small>
+                        <div class="trans-actions">
+                            <button class="btn btn-warning btn-sm" onclick="editTransaction('${trans.id}')">Edit</button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteTransaction('${trans.id}')">Hapus</button>
+                        </div>
                     </div>
                     <div class="trans-amount ${trans.type}">
                         ${trans.type === 'income' ? '+' : '-'} ${formatCurrency(trans.amount)}
@@ -1580,12 +1648,73 @@
             document.getElementById('editingPlanningId').value = planning.id;
             document.getElementById('planningName').value = planning.name;
             document.getElementById('planningType').value = planning.type;
-            document.getElementById('planningTarget').value = planning.target;
+            document.getElementById('planningTarget').value = formatCurrencyInput(planning.target.toString());
             document.getElementById('planningDesc').value = planning.description || '';
             document.getElementById('planningSubmitBtn').textContent = 'Update Planning';
             
             // Show modal
             document.getElementById('planningModal').classList.add('active');
+        };
+        
+        // Edit transaction function
+        window.editTransaction = function(transactionId) {
+            const transaction = appData.transactions.find(t => t.id === transactionId);
+            if (!transaction) return;
+            
+            // Fill form with existing data
+            document.getElementById('transactionFormTitle').textContent = 'Edit Transaksi';
+            document.getElementById('editingTransactionId').value = transaction.id;
+            document.getElementById('transType').value = transaction.type;
+            document.getElementById('transPlanning').value = transaction.planningId;
+            document.getElementById('transAmount').value = formatCurrencyInput(transaction.amount.toString());
+            document.getElementById('transDesc').value = transaction.description || '';
+            document.getElementById('transDate').value = transaction.date;
+            document.getElementById('transactionSubmitBtn').textContent = 'Update Transaksi';
+            document.getElementById('cancelEditBtn').style.display = 'block';
+            
+            // Update planning select info
+            const planning = getCurrentMonthPlanning().find(p => p.id === transaction.planningId);
+            if (planning) {
+                const balanceInfo = document.getElementById('balanceInfo');
+                if (planning.type === 'Pengeluaran') {
+                    const remaining = getRemainingForPlanning(planning.id) + transaction.amount; // Add back the transaction amount since we're editing
+                    const used = (planning.used || 0) - transaction.amount; // Subtract current transaction
+                    const percentage = planning.target > 0 ? Math.min(100, used / planning.target * 100) : 0;
+                    balanceInfo.innerHTML = `Sisa: ${formatCurrency(remaining)} dari ${formatCurrency(planning.target)} (${percentage.toFixed(1)}% terpakai)`;
+                    balanceInfo.style.display = 'block';
+                    balanceInfo.style.color = percentage > 80 ? '#e71d36' : percentage > 50 ? '#ff9f1c' : '#2ec4b6';
+                } else if (planning.type === 'Pemasukan') {
+                    const collected = (planning.collected || 0) - transaction.amount; // Subtract current transaction
+                    const percentage = planning.target > 0 ? Math.min(100, collected / planning.target * 100) : 0;
+                    balanceInfo.innerHTML = `Terkumpul: ${formatCurrency(collected)} dari ${formatCurrency(planning.target)} (${percentage.toFixed(1)}%)`;
+                    balanceInfo.style.display = 'block';
+                    balanceInfo.style.color = '#2ec4b6';
+                }
+            }
+            
+            // Scroll to form
+            document.getElementById('transactions').scrollIntoView({ behavior: 'smooth' });
+            
+            // Change to transactions page
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.querySelector('.nav-btn[data-page="transactions"]').classList.add('active');
+            document.getElementById('transactions').classList.add('active');
+        };
+        
+        // Delete transaction function
+        window.deleteTransaction = function(transactionId) {
+            const transaction = appData.transactions.find(t => t.id === transactionId);
+            if (!transaction) return;
+            
+            const planning = getCurrentMonthPlanning().find(p => p.id === transaction.planningId);
+            const planningName = planning ? planning.name : 'Unknown';
+            
+            if (confirm(`Hapus transaksi "${transaction.description || planningName}" sebesar ${formatCurrency(transaction.amount)}?`)) {
+                appData.transactions = appData.transactions.filter(t => t.id !== transactionId);
+                saveData();
+                showToast('Transaksi berhasil dihapus!');
+            }
         };
         
         // ========== EVENT HANDLERS ==========
@@ -1613,6 +1742,19 @@
                     } else if (pageId === 'planning') {
                         updatePlanningList();
                         updateIncomeList();
+                    } else if (pageId === 'transactions') {
+                        updateTransactionHistory();
+                        // Reset form jika tidak sedang edit
+                        if (!document.getElementById('editingTransactionId').value) {
+                            document.getElementById('transactionForm').reset();
+                            const today = new Date();
+                            document.getElementById('transDate').valueAsDate = today;
+                            document.getElementById('transDate').value = today.toISOString().split('T')[0];
+                            document.getElementById('balanceInfo').style.display = 'none';
+                            document.getElementById('transactionFormTitle').textContent = 'Tambah Transaksi';
+                            document.getElementById('transactionSubmitBtn').textContent = 'Simpan Transaksi';
+                            document.getElementById('cancelEditBtn').style.display = 'none';
+                        }
                     } else if (pageId === 'reports') {
                         updateYearSelect();
                     }
@@ -1659,7 +1801,7 @@
             
             const planningName = document.getElementById('planningName').value.trim();
             const planningType = document.getElementById('planningType').value;
-            const planningTarget = parseInt(document.getElementById('planningTarget').value);
+            const planningTarget = parseCurrency(document.getElementById('planningTarget').value);
             const planningDesc = document.getElementById('planningDesc').value.trim();
             const editingPlanningId = document.getElementById('editingPlanningId').value;
             
@@ -1746,7 +1888,7 @@
             e.preventDefault();
             
             const incomeName = document.getElementById('incomeName').value.trim();
-            const incomeAmount = parseInt(document.getElementById('incomeAmount').value);
+            const incomeAmount = parseCurrency(document.getElementById('incomeAmount').value);
             const incomeDesc = document.getElementById('incomeDesc').value.trim();
             
             if (incomeAmount <= 0) {
@@ -1771,15 +1913,31 @@
             showToast(`Sumber pemasukan "${incomeName}" berhasil ditambahkan!`);
         });
         
-        // Save transaction
+        // Currency input formatting for transaction amount
+        document.getElementById('transAmount').addEventListener('input', function(e) {
+            this.value = formatCurrencyInput(this.value);
+        });
+        
+        // Currency input formatting for planning target
+        document.getElementById('planningTarget').addEventListener('input', function(e) {
+            this.value = formatCurrencyInput(this.value);
+        });
+        
+        // Currency input formatting for income amount
+        document.getElementById('incomeAmount').addEventListener('input', function(e) {
+            this.value = formatCurrencyInput(this.value);
+        });
+        
+        // Save or update transaction
         document.getElementById('transactionForm').addEventListener('submit', function(e) {
             e.preventDefault();
             
-            const amount = parseInt(document.getElementById('transAmount').value);
+            const amount = parseCurrency(document.getElementById('transAmount').value);
             const type = document.getElementById('transType').value;
             const planningId = document.getElementById('transPlanning').value;
             const transDate = document.getElementById('transDate').value;
             const description = document.getElementById('transDesc').value.trim();
+            const editingTransactionId = document.getElementById('editingTransactionId').value;
             
             if (!planningId) {
                 alert('Pilih planning terlebih dahulu!');
@@ -1803,8 +1961,14 @@
             const planning = getCurrentMonthPlanning().find(p => p.id === planningId);
             if (planning && planning.type === 'Pengeluaran' && type === 'expense') {
                 const used = planning.used || 0;
-                if (used + amount > planning.target) {
-                    if (!confirm(`Peringatan: Pengeluaran ini melebihi target planning!\nTarget: ${formatCurrency(planning.target)}\nSudah terpakai: ${formatCurrency(used)}\nTambah: ${formatCurrency(amount)}\nTotal akan jadi: ${formatCurrency(used + amount)}\nLanjutkan?`)) {
+                let currentTransactionAmount = 0;
+                if (editingTransactionId) {
+                    const oldTransaction = appData.transactions.find(t => t.id === editingTransactionId);
+                    currentTransactionAmount = oldTransaction ? oldTransaction.amount : 0;
+                }
+                const projectedUsed = used - currentTransactionAmount + amount;
+                if (projectedUsed > planning.target) {
+                    if (!confirm(`Peringatan: Pengeluaran ini melebihi target planning!\nTarget: ${formatCurrency(planning.target)}\nSudah terpakai: ${formatCurrency(used)}\nTambah: ${formatCurrency(amount)}\nTotal akan jadi: ${formatCurrency(projectedUsed)}\nLanjutkan?`)) {
                         return;
                     }
                 }
@@ -1812,23 +1976,48 @@
             
             if (planning && planning.type === 'Pemasukan' && type === 'income') {
                 const collected = planning.collected || 0;
-                if (collected + amount > planning.target) {
-                    if (!confirm(`Peringatan: Pemasukan ini melebihi target planning!\nTarget: ${formatCurrency(planning.target)}\nSudah terkumpul: ${formatCurrency(collected)}\nTambah: ${formatCurrency(amount)}\nTotal akan jadi: ${formatCurrency(collected + amount)}\nLanjutkan?`)) {
+                let currentTransactionAmount = 0;
+                if (editingTransactionId) {
+                    const oldTransaction = appData.transactions.find(t => t.id === editingTransactionId);
+                    currentTransactionAmount = oldTransaction ? oldTransaction.amount : 0;
+                }
+                const projectedCollected = collected - currentTransactionAmount + amount;
+                if (projectedCollected > planning.target) {
+                    if (!confirm(`Peringatan: Pemasukan ini melebihi target planning!\nTarget: ${formatCurrency(planning.target)}\nSudah terkumpul: ${formatCurrency(collected)}\nTambah: ${formatCurrency(amount)}\nTotal akan jadi: ${formatCurrency(projectedCollected)}\nLanjutkan?`)) {
                         return;
                     }
                 }
             }
             
-            const transaction = {
-                id: 'trans_' + Date.now(),
-                type: type,
-                planningId: planningId,
-                amount: amount,
-                description: description,
-                date: transDate
-            };
+            if (editingTransactionId) {
+                // Update existing transaction
+                const transactionIndex = appData.transactions.findIndex(t => t.id === editingTransactionId);
+                if (transactionIndex !== -1) {
+                    appData.transactions[transactionIndex] = {
+                        ...appData.transactions[transactionIndex],
+                        type: type,
+                        planningId: planningId,
+                        amount: amount,
+                        description: description,
+                        date: transDate
+                    };
+                    showToast('Transaksi berhasil diperbarui!');
+                }
+            } else {
+                // Add new transaction
+                const transaction = {
+                    id: 'trans_' + Date.now(),
+                    type: type,
+                    planningId: planningId,
+                    amount: amount,
+                    description: description,
+                    date: transDate
+                };
+                
+                appData.transactions.push(transaction);
+                showToast('Transaksi berhasil disimpan!');
+            }
             
-            appData.transactions.push(transaction);
             saveData();
             
             // Reset form
@@ -1836,8 +2025,24 @@
             const todayStr = new Date().toISOString().split('T')[0];
             document.getElementById('transDate').value = todayStr;
             document.getElementById('balanceInfo').style.display = 'none';
-            
-            showToast('Transaksi berhasil disimpan!');
+            document.getElementById('editingTransactionId').value = '';
+            document.getElementById('transactionFormTitle').textContent = 'Tambah Transaksi';
+            document.getElementById('transactionSubmitBtn').textContent = 'Simpan Transaksi';
+            document.getElementById('cancelEditBtn').style.display = 'none';
+        });
+        
+        // Cancel edit button
+        document.getElementById('cancelEditBtn').addEventListener('click', function() {
+            document.getElementById('transactionForm').reset();
+            const today = new Date();
+            document.getElementById('transDate').valueAsDate = today;
+            document.getElementById('transDate').value = today.toISOString().split('T')[0];
+            document.getElementById('balanceInfo').style.display = 'none';
+            document.getElementById('editingTransactionId').value = '';
+            document.getElementById('transactionFormTitle').textContent = 'Tambah Transaksi';
+            document.getElementById('transactionSubmitBtn').textContent = 'Simpan Transaksi';
+            this.style.display = 'none';
+            showToast('Edit transaksi dibatalkan');
         });
         
         // Transaction month filter
@@ -1976,24 +2181,6 @@
                 showToast(`Tahun aktif diubah ke ${year}`);
             }
         });
-        
-        // ========== UTILITY FUNCTIONS ==========
-        
-        function formatCurrency(amount) {
-            if (typeof amount !== 'number' || isNaN(amount)) {
-                amount = 0;
-            }
-            return 'Rp ' + Math.round(amount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-        }
-        
-        function formatDate(dateString) {
-            const date = new Date(dateString);
-            return date.toLocaleDateString('id-ID', {
-                day: '2-digit',
-                month: 'short',
-                year: 'numeric'
-            });
-        }
         
         // ========== INITIALIZE ==========
         
