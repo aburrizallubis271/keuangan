@@ -173,6 +173,23 @@
             outline: none;
         }
         
+        .currency-input {
+            position: relative;
+        }
+        
+        .currency-input input {
+            padding-left: 35px;
+        }
+        
+        .currency-input .currency-symbol {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #495057;
+            font-weight: bold;
+        }
+        
         /* Buttons */
         .btn {
             padding: 10px 16px;
@@ -231,6 +248,12 @@
         .btn-group {
             display: flex;
             gap: 5px;
+        }
+        
+        .edit-buttons {
+            display: flex;
+            gap: 5px;
+            margin-top: 8px;
         }
         
         /* Stats */
@@ -548,6 +571,17 @@
             margin-bottom: 8px;
         }
         
+        /* Transaction Edit Modal */
+        .edit-transaction-modal .edit-form {
+            margin-top: 15px;
+        }
+        
+        .edit-transaction-modal .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
         /* Responsive */
         @media (max-width: 480px) {
             body {
@@ -588,6 +622,10 @@
             
             .quick-actions {
                 grid-template-columns: 1fr;
+            }
+            
+            .edit-buttons {
+                flex-direction: column;
             }
         }
         
@@ -848,11 +886,15 @@
                         <label>Keterangan Modal</label>
                         <input type="text" id="modalDesc" placeholder="Contoh: Modal awal usaha, Tambahan modal">
                     </div>
-                    <div class="form-group">
-                        <label>Jumlah Modal (Rp)</label>
-                        <input type="number" id="modalAmount" min="0">
+                    <div class="form-group currency-input">
+                        <span class="currency-symbol">Rp</span>
+                        <label>Jumlah Modal</label>
+                        <input type="text" id="modalAmount" placeholder="Contoh: 1.000.000" oninput="formatCurrencyInput(this)">
                     </div>
-                    <button class="btn btn-success btn-block" id="simpanModalBtn">💾 Simpan Modal</button>
+                    <div class="edit-buttons">
+                        <button class="btn btn-success btn-block" id="simpanModalBtn">💾 Simpan Modal</button>
+                        <button class="btn btn-warning btn-block" id="editLastModalBtn">✏️ Edit Modal Terakhir</button>
+                    </div>
                 </div>
             </div>
             
@@ -905,9 +947,10 @@
                         </select>
                     </div>
                     
-                    <div class="form-group">
-                        <label>Jumlah (Rp)</label>
-                        <input type="number" id="expenseAmount" required min="0">
+                    <div class="form-group currency-input">
+                        <span class="currency-symbol">Rp</span>
+                        <label>Jumlah</label>
+                        <input type="text" id="expenseAmount" placeholder="Contoh: 100.000" required oninput="formatCurrencyInput(this)">
                     </div>
                     
                     <div class="form-group">
@@ -920,7 +963,10 @@
                         <input type="date" id="expenseDate" required>
                     </div>
                     
-                    <button type="submit" class="btn btn-primary btn-block">Simpan Pengeluaran</button>
+                    <div class="edit-buttons">
+                        <button type="submit" class="btn btn-primary">Simpan Pengeluaran</button>
+                        <button type="button" class="btn btn-warning" id="editLastExpenseBtn">✏️ Edit Pengeluaran Terakhir</button>
+                    </div>
                 </form>
             </div>
             
@@ -970,9 +1016,10 @@
                         </select>
                     </div>
                     
-                    <div class="form-group">
-                        <label>Jumlah (Rp)</label>
-                        <input type="number" id="incomeAmount" required min="0">
+                    <div class="form-group currency-input">
+                        <span class="currency-symbol">Rp</span>
+                        <label>Jumlah</label>
+                        <input type="text" id="incomeAmount" placeholder="Contoh: 500.000" required oninput="formatCurrencyInput(this)">
                     </div>
                     
                     <div class="form-group">
@@ -985,7 +1032,10 @@
                         <input type="date" id="incomeDate" required>
                     </div>
                     
-                    <button type="submit" class="btn btn-success btn-block">Simpan Pemasukan</button>
+                    <div class="edit-buttons">
+                        <button type="submit" class="btn btn-success">Simpan Pemasukan</button>
+                        <button type="button" class="btn btn-warning" id="editLastIncomeBtn">✏️ Edit Pemasukan Terakhir</button>
+                    </div>
                 </form>
             </div>
             
@@ -1102,11 +1152,15 @@
                     <div class="menu-icon">🗑️</div>
                     <div>Reset Data</div>
                 </div>
+                <div class="menu-item" id="editTransBtn">
+                    <div class="menu-icon">✏️</div>
+                    <div>Edit Transaksi</div>
+                </div>
             </div>
             
             <div class="card" style="margin-top: 15px;">
                 <h2>Informasi Usaha</h2>
-                <p><strong>Versi:</strong> 1.0</p>
+                <p><strong>Versi:</strong> 1.1</p>
                 <p><strong>Tahun Aktif:</strong> <span id="currentYear">2024</span></p>
                 <p><strong>Modal:</strong> <span id="totalModalCount">0 transaksi</span></p>
                 <p><strong>Pengeluaran:</strong> <span id="totalExpenseCount">0 transaksi</span></p>
@@ -1140,6 +1194,64 @@
         </div>
     </div>
     
+    <!-- Edit Transaction Modal -->
+    <div class="modal edit-transaction-modal" id="editTransactionModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="editModalTitle">Edit Transaksi</h3>
+                <button class="close-btn" id="closeEditModalBtn">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="editTransactionForm">
+                    <div class="form-group">
+                        <label>Jenis Transaksi</label>
+                        <select id="editType" disabled>
+                            <option value="modal">Modal</option>
+                            <option value="expense">Pengeluaran</option>
+                            <option value="income">Pemasukan</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group" id="editCategoryGroup" style="display: none;">
+                        <label>Kategori</label>
+                        <select id="editCategory">
+                            <option value="">Pilih kategori</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group" id="editSourceGroup" style="display: none;">
+                        <label>Sumber Pemasukan</label>
+                        <select id="editSource">
+                            <option value="">Pilih sumber</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Keterangan</label>
+                        <input type="text" id="editDescription" placeholder="Masukkan keterangan">
+                    </div>
+                    
+                    <div class="form-group currency-input">
+                        <span class="currency-symbol">Rp</span>
+                        <label>Jumlah</label>
+                        <input type="text" id="editAmount" placeholder="Contoh: 100.000" oninput="formatCurrencyInput(this)">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Tanggal</label>
+                        <input type="date" id="editDate" required>
+                    </div>
+                    
+                    <div class="btn-group">
+                        <button type="submit" class="btn btn-primary">Simpan Perubahan</button>
+                        <button type="button" class="btn btn-danger" id="deleteTransactionBtn">Hapus Transaksi</button>
+                        <button type="button" class="btn" id="cancelEditBtn">Batal</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
     <!-- Loading Overlay -->
     <div class="loading" id="loadingOverlay">
         <div class="loading-spinner"></div>
@@ -1153,7 +1265,7 @@
         
         // Data structure untuk usaha
         let businessData = {
-            version: "1.0",
+            version: "1.1",
             currentYear: new Date().getFullYear(),
             currentMonth: new Date().getMonth(),
             modal: [],          // Data modal per bulan
@@ -1166,7 +1278,7 @@
                 "Sewa Tempat",
                 "Listrik/Air",
                 "Transportasi",
-                "Pemasaran",
+                "Pemasarkan",
                 "Lainnya"
             ],
             incomeSources: [    // Sumber pemasukan default
@@ -1183,6 +1295,10 @@
             "Januari", "Februari", "Maret", "April", "Mei", "Juni",
             "Juli", "Agustus", "September", "Oktober", "November", "Desember"
         ];
+        
+        // Variable untuk tracking transaksi yang sedang diedit
+        let currentEditTransaction = null;
+        let currentEditType = null;
         
         // ========== FUNGSI UTAMA ==========
         
@@ -1375,6 +1491,258 @@
             // Refresh page content
             updateDisplay();
         }
+        
+        // ========== FUNGSI FORMAT INPUT ==========
+        
+        // Format currency input dengan titik
+        window.formatCurrencyInput = function(input) {
+            let value = input.value.replace(/[^\d]/g, '');
+            
+            // Hapus nol di depan
+            if (value.length > 1) {
+                value = value.replace(/^0+/, '');
+            }
+            
+            if (value === '') {
+                input.value = '';
+                return;
+            }
+            
+            // Format dengan titik
+            const formatted = parseInt(value).toLocaleString('id-ID');
+            input.value = formatted;
+            
+            // Simpan nilai asli sebagai data attribute
+            input.setAttribute('data-raw-value', value);
+        };
+        
+        // Get raw value dari input yang sudah diformat
+        function getRawCurrencyValue(input) {
+            const rawValue = input.getAttribute('data-raw-value');
+            if (rawValue) {
+                return parseInt(rawValue);
+            }
+            
+            // Fallback: parse dari value yang diformat
+            const value = input.value.replace(/[^\d]/g, '');
+            return value ? parseInt(value) : 0;
+        }
+        
+        // Format angka menjadi string currency dengan titik
+        function formatCurrency(amount) {
+            if (typeof amount !== 'number' || isNaN(amount)) {
+                amount = 0;
+            }
+            return 'Rp ' + Math.round(amount).toLocaleString('id-ID');
+        }
+        
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleDateString('id-ID', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric'
+            });
+        }
+        
+        // ========== FUNGSI EDIT TRANSAKSI ==========
+        
+        // Buka modal edit untuk transaksi terakhir
+        function openEditLastTransaction(type) {
+            let transactions, transaction;
+            
+            switch(type) {
+                case 'modal':
+                    transactions = getCurrentMonthModal();
+                    break;
+                case 'expense':
+                    transactions = getCurrentMonthExpenses();
+                    break;
+                case 'income':
+                    transactions = getCurrentMonthIncomes();
+                    break;
+                default:
+                    showToast('Jenis transaksi tidak valid');
+                    return;
+            }
+            
+            if (transactions.length === 0) {
+                showToast(`Belum ada transaksi ${type}`);
+                return;
+            }
+            
+            // Ambil transaksi terakhir
+            transaction = transactions[transactions.length - 1];
+            openEditTransactionModal(type, transaction);
+        }
+        
+        // Buka modal edit transaksi
+        function openEditTransactionModal(type, transaction) {
+            currentEditType = type;
+            currentEditTransaction = transaction;
+            
+            const modal = document.getElementById('editTransactionModal');
+            const title = document.getElementById('editModalTitle');
+            const editType = document.getElementById('editType');
+            const editCategory = document.getElementById('editCategory');
+            const editSource = document.getElementById('editSource');
+            const editCategoryGroup = document.getElementById('editCategoryGroup');
+            const editSourceGroup = document.getElementById('editSourceGroup');
+            const editDescription = document.getElementById('editDescription');
+            const editAmount = document.getElementById('editAmount');
+            const editDate = document.getElementById('editDate');
+            
+            // Set judul modal
+            let typeName = '';
+            switch(type) {
+                case 'modal': typeName = 'Modal'; break;
+                case 'expense': typeName = 'Pengeluaran'; break;
+                case 'income': typeName = 'Pemasukan'; break;
+            }
+            title.textContent = `Edit ${typeName}`;
+            
+            // Set nilai form
+            editType.value = type;
+            editDescription.value = transaction.description || '';
+            
+            // Format amount dengan titik
+            editAmount.value = transaction.amount.toLocaleString('id-ID');
+            editAmount.setAttribute('data-raw-value', transaction.amount.toString());
+            
+            editDate.value = transaction.date;
+            
+            // Handle berdasarkan jenis transaksi
+            switch(type) {
+                case 'modal':
+                    editCategoryGroup.style.display = 'none';
+                    editSourceGroup.style.display = 'none';
+                    break;
+                    
+                case 'expense':
+                    editCategoryGroup.style.display = 'block';
+                    editSourceGroup.style.display = 'none';
+                    
+                    // Populate kategori
+                    editCategory.innerHTML = '<option value="">Pilih kategori</option>';
+                    businessData.categories.forEach(cat => {
+                        const option = document.createElement('option');
+                        option.value = cat;
+                        option.textContent = cat;
+                        if (cat === transaction.category) option.selected = true;
+                        editCategory.appendChild(option);
+                    });
+                    break;
+                    
+                case 'income':
+                    editCategoryGroup.style.display = 'none';
+                    editSourceGroup.style.display = 'block';
+                    
+                    // Populate sumber pemasukan
+                    editSource.innerHTML = '<option value="">Pilih sumber</option>';
+                    businessData.incomeSources.forEach(source => {
+                        const option = document.createElement('option');
+                        option.value = source;
+                        option.textContent = source;
+                        if (source === transaction.source) option.selected = true;
+                        editSource.appendChild(option);
+                    });
+                    break;
+            }
+            
+            // Tampilkan modal
+            modal.classList.add('active');
+        }
+        
+        // Tutup modal edit
+        function closeEditTransactionModal() {
+            document.getElementById('editTransactionModal').classList.remove('active');
+            currentEditTransaction = null;
+            currentEditType = null;
+        }
+        
+        // Simpan perubahan transaksi
+        function saveTransactionChanges() {
+            if (!currentEditTransaction || !currentEditType) return;
+            
+            const editDescription = document.getElementById('editDescription').value.trim();
+            const editAmount = getRawCurrencyValue(document.getElementById('editAmount'));
+            const editDate = document.getElementById('editDate').value;
+            
+            if (!editDescription) {
+                alert('Keterangan tidak boleh kosong!');
+                return;
+            }
+            
+            if (editAmount <= 0) {
+                alert('Jumlah harus lebih dari 0!');
+                return;
+            }
+            
+            // Cari transaksi di array yang sesuai
+            let arrayToUpdate;
+            switch(currentEditType) {
+                case 'modal':
+                    arrayToUpdate = businessData.modal;
+                    break;
+                case 'expense':
+                    arrayToUpdate = businessData.expenses;
+                    const editCategory = document.getElementById('editCategory').value;
+                    if (!editCategory) {
+                        alert('Pilih kategori pengeluaran!');
+                        return;
+                    }
+                    currentEditTransaction.category = editCategory;
+                    break;
+                case 'income':
+                    arrayToUpdate = businessData.incomes;
+                    const editSource = document.getElementById('editSource').value;
+                    if (!editSource) {
+                        alert('Pilih sumber pemasukan!');
+                        return;
+                    }
+                    currentEditTransaction.source = editSource;
+                    break;
+            }
+            
+            // Update transaksi
+            const index = arrayToUpdate.findIndex(t => t.id === currentEditTransaction.id);
+            if (index !== -1) {
+                currentEditTransaction.description = editDescription;
+                currentEditTransaction.amount = editAmount;
+                currentEditTransaction.date = editDate;
+                
+                // Update di array
+                arrayToUpdate[index] = currentEditTransaction;
+                
+                saveData();
+                closeEditTransactionModal();
+                showToast('Transaksi berhasil diupdate!');
+            }
+        }
+        
+        // Hapus transaksi yang sedang diedit
+        function deleteCurrentTransaction() {
+            if (!currentEditTransaction || !currentEditType) return;
+            
+            if (!confirm('Hapus transaksi ini?')) return;
+            
+            let arrayToUpdate;
+            switch(currentEditType) {
+                case 'modal': arrayToUpdate = businessData.modal; break;
+                case 'expense': arrayToUpdate = businessData.expenses; break;
+                case 'income': arrayToUpdate = businessData.incomes; break;
+            }
+            
+            const index = arrayToUpdate.findIndex(t => t.id === currentEditTransaction.id);
+            if (index !== -1) {
+                arrayToUpdate.splice(index, 1);
+                saveData();
+                closeEditTransactionModal();
+                showToast('Transaksi berhasil dihapus!');
+            }
+        }
+        
+        // ========== UPDATE DISPLAY ==========
         
         // Update display
         function updateDisplay() {
@@ -1652,7 +2020,10 @@
                     </div>
                     <div>
                         <div style="font-weight: bold; color: #2d6a4f;">${formatCurrency(modal.amount)}</div>
-                        <button class="btn btn-danger btn-sm" onclick="deleteModal(${index})">Hapus</button>
+                        <div style="display: flex; gap: 5px; margin-top: 5px;">
+                            <button class="btn btn-warning btn-sm" onclick="openEditTransactionModal('modal', ${JSON.stringify(modal).replace(/"/g, '&quot;')})">Edit</button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteModal(${index})">Hapus</button>
+                        </div>
                     </div>
                 `;
                 container.appendChild(div);
@@ -1693,8 +2064,13 @@
                         <strong>${expense.category}</strong><br>
                         <small>${expense.description || '-'} • ${formatDate(expense.date)}</small>
                     </div>
-                    <div class="trans-amount expense">
-                        - ${formatCurrency(expense.amount)}
+                    <div>
+                        <div class="trans-amount expense">
+                            - ${formatCurrency(expense.amount)}
+                        </div>
+                        <div style="display: flex; gap: 5px; margin-top: 5px; justify-content: flex-end;">
+                            <button class="btn btn-warning btn-sm" onclick="openEditTransactionModal('expense', ${JSON.stringify(expense).replace(/"/g, '&quot;')})">Edit</button>
+                        </div>
                     </div>
                 `;
                 container.appendChild(div);
@@ -1735,8 +2111,13 @@
                         <strong>${income.source}</strong><br>
                         <small>${income.description || '-'} • ${formatDate(income.date)}</small>
                     </div>
-                    <div class="trans-amount income">
-                        + ${formatCurrency(income.amount)}
+                    <div>
+                        <div class="trans-amount income">
+                            + ${formatCurrency(income.amount)}
+                        </div>
+                        <div style="display: flex; gap: 5px; margin-top: 5px; justify-content: flex-end;">
+                            <button class="btn btn-warning btn-sm" onclick="openEditTransactionModal('income', ${JSON.stringify(income).replace(/"/g, '&quot;')})">Edit</button>
+                        </div>
                     </div>
                 `;
                 container.appendChild(div);
@@ -2193,7 +2574,7 @@
         
         // Save modal
         document.getElementById('simpanModalBtn').addEventListener('click', function() {
-            const amount = parseInt(document.getElementById('modalAmount').value);
+            const amount = getRawCurrencyValue(document.getElementById('modalAmount'));
             const description = document.getElementById('modalDesc').value.trim();
             
             if (!description) {
@@ -2224,11 +2605,16 @@
             showToast('Modal berhasil disimpan!');
         });
         
+        // Edit modal terakhir
+        document.getElementById('editLastModalBtn').addEventListener('click', function() {
+            openEditLastTransaction('modal');
+        });
+        
         // Save expense
         document.getElementById('expenseForm').addEventListener('submit', function(e) {
             e.preventDefault();
             
-            const amount = parseInt(document.getElementById('expenseAmount').value);
+            const amount = getRawCurrencyValue(document.getElementById('expenseAmount'));
             const category = document.getElementById('expenseCategory').value;
             const description = document.getElementById('expenseDesc').value.trim();
             const expenseDate = document.getElementById('expenseDate').value;
@@ -2267,14 +2653,22 @@
             const todayStr = new Date().toISOString().split('T')[0];
             document.getElementById('expenseDate').value = todayStr;
             
+            // Reset input formatting
+            document.getElementById('expenseAmount').setAttribute('data-raw-value', '');
+            
             showToast('Pengeluaran berhasil disimpan!');
+        });
+        
+        // Edit expense terakhir
+        document.getElementById('editLastExpenseBtn').addEventListener('click', function() {
+            openEditLastTransaction('expense');
         });
         
         // Save income
         document.getElementById('incomeForm').addEventListener('submit', function(e) {
             e.preventDefault();
             
-            const amount = parseInt(document.getElementById('incomeAmount').value);
+            const amount = getRawCurrencyValue(document.getElementById('incomeAmount'));
             const source = document.getElementById('incomeSource').value;
             const description = document.getElementById('incomeDesc').value.trim();
             const incomeDate = document.getElementById('incomeDate').value;
@@ -2305,7 +2699,15 @@
             const todayStr = new Date().toISOString().split('T')[0];
             document.getElementById('incomeDate').value = todayStr;
             
+            // Reset input formatting
+            document.getElementById('incomeAmount').setAttribute('data-raw-value', '');
+            
             showToast('Pemasukan berhasil disimpan!');
+        });
+        
+        // Edit income terakhir
+        document.getElementById('editLastIncomeBtn').addEventListener('click', function() {
+            openEditLastTransaction('income');
         });
         
         // Export monthly report
@@ -2314,6 +2716,21 @@
             const year = parseInt(document.getElementById('reportYear').value);
             generatePDFReport(year, month);
         });
+        
+        // Edit transaction form submit
+        document.getElementById('editTransactionForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            saveTransactionChanges();
+        });
+        
+        // Delete transaction button
+        document.getElementById('deleteTransactionBtn').addEventListener('click', deleteCurrentTransaction);
+        
+        // Cancel edit button
+        document.getElementById('cancelEditBtn').addEventListener('click', closeEditTransactionModal);
+        
+        // Close edit modal button
+        document.getElementById('closeEditModalBtn').addEventListener('click', closeEditTransactionModal);
         
         // Backup data
         document.getElementById('backupBtn').addEventListener('click', function() {
@@ -2370,23 +2787,10 @@
             }
         });
         
-        // ========== UTILITY FUNCTIONS ==========
-        
-        function formatCurrency(amount) {
-            if (typeof amount !== 'number' || isNaN(amount)) {
-                amount = 0;
-            }
-            return 'Rp ' + Math.round(amount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-        }
-        
-        function formatDate(dateString) {
-            const date = new Date(dateString);
-            return date.toLocaleDateString('id-ID', {
-                day: '2-digit',
-                month: 'short',
-                year: 'numeric'
-            });
-        }
+        // Edit transaction menu
+        document.getElementById('editTransBtn').addEventListener('click', function() {
+            alert('Fitur edit transaksi tersedia di masing-masing halaman:\n1. Modal: Tombol "Edit Modal Terakhir"\n2. Pengeluaran: Tombol "Edit Pengeluaran Terakhir"\n3. Pemasukan: Tombol "Edit Pemasukan Terakhir"\n\nJuga tersedia tombol Edit di setiap riwayat transaksi.');
+        });
         
         // ========== INITIALIZE ==========
         
@@ -2399,6 +2803,7 @@
             
             document.getElementById('expenseDate').value = todayStr;
             document.getElementById('incomeDate').value = todayStr;
+            document.getElementById('editDate').value = todayStr;
             
             // Initialize month selector
             document.getElementById('reportMonth').value = today.getMonth();
@@ -2432,6 +2837,9 @@
             console.log('Pengeluaran:', businessData.expenses.length);
             console.log('Pemasukan:', businessData.incomes.length);
             console.log('Bulan:', monthNames[businessData.currentMonth], businessData.currentYear);
+            
+            // Initial display update
+            updateDisplay();
         }
         
         // Start the app
