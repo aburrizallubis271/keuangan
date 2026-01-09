@@ -694,8 +694,8 @@
                                 
                                 <div class="form-group">
                                     <label for="transPlanning">Planning</label>
-                                    <select id="transPlanning" required>
-                                        <option value="">Pilih planning</option>
+                                    <select id="transPlanning">
+                                        <option value="">Tidak ada planning</option>
                                     </select>
                                     <small id="balanceInfo" style="color: #666; display: none; font-size:0.8rem;"></small>
                                 </div>
@@ -1031,8 +1031,14 @@
         // ============================================
         async function callAPI(action, data = {}) {
             try {
+                console.log('Calling API:', action, data);
+                
                 const response = await fetch(CONFIG.API_URL, {
                     method: 'POST',
+                    mode: 'cors',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
                     body: JSON.stringify({
                         action: action,
                         password: CONFIG.PASSWORD,
@@ -1044,12 +1050,14 @@
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 
-                return await response.json();
+                const result = await response.json();
+                console.log('API Response:', result);
+                return result;
                 
             } catch (error) {
                 console.error('API Error:', error);
-                showToast('❌ Gagal terhubung ke server', 'error');
-                return {error: error.message};
+                showToast('❌ Gagal terhubung ke server: ' + error.message, 'error');
+                return { error: error.message, success: false };
             }
         }
         
@@ -1061,7 +1069,7 @@
                 
                 if (result.status === "OK") {
                     showToast('✅ API Connected! Loading data...', 'success');
-                    loadAllData();
+                    await loadAllData();
                     return true;
                 } else {
                     showToast('❌ API Error: ' + (result.error || 'Unknown error'), 'error');
@@ -1076,24 +1084,41 @@
         async function loadAllData() {
             showLoading();
             try {
+                console.log('Loading all data...');
+                
                 // Load transactions
                 const transResult = await callAPI('get');
-                if (transResult.success) {
-                    appData.transactions = transResult.transactions || [];
+                console.log('Transactions result:', transResult);
+                
+                if (transResult.success && transResult.transactions) {
+                    appData.transactions = transResult.transactions.map(t => ({
+                        id: t.id || 'trans_' + Date.now(),
+                        description: t.description || '',
+                        amount: parseFloat(t.amount) || 0,
+                        type: t.type || 'expense',
+                        category: t.category || 'Umum',
+                        date: t.date || new Date().toISOString().split('T')[0],
+                        user: t.user || 'User',
+                        notes: t.notes || '',
+                        planningId: t.planningId || null
+                    }));
+                    
                     document.getElementById('transactionCount').textContent = appData.transactions.length;
                     document.getElementById('transactionCountInfo').textContent = appData.transactions.length;
+                } else {
+                    appData.transactions = [];
                 }
                 
                 // Load plans
                 const planResult = await callAPI('getPlans');
-                if (planResult.success) {
-                    // Convert API plans to our structure
-                    const plans = planResult.plans || [];
-                    appData.planningTemplates = plans.map(plan => ({
+                console.log('Plans result:', planResult);
+                
+                if (planResult.success && planResult.plans) {
+                    appData.planningTemplates = planResult.plans.map(plan => ({
                         id: plan.id || 'plan_' + Date.now(),
                         name: plan.name || 'Unnamed',
-                        type: plan.type || 'Pengeluaran',
-                        target: plan.target || 0,
+                        type: plan.type === 'income' ? 'Pemasukan' : 'Pengeluaran',
+                        target: parseFloat(plan.target) || 0,
                         description: plan.notes || '',
                         category: plan.category || 'Umum'
                     }));
@@ -1101,37 +1126,47 @@
                     document.getElementById('planningCount').textContent = appData.planningTemplates.length;
                     document.getElementById('planningCountInfo').textContent = appData.planningTemplates.length;
                     
-                    // Convert to monthly planning
+                    // Initialize monthly planning for current month
                     const monthKey = getCurrentMonthKey();
-                    appData.monthlyPlanning[monthKey] = appData.planningTemplates.map(template => ({
-                        id: template.id + '_' + monthKey,
-                        templateId: template.id,
-                        name: template.name,
-                        type: template.type,
-                        target: template.target,
-                        description: template.description,
-                        used: 0,
-                        collected: 0
-                    }));
+                    if (!appData.monthlyPlanning[monthKey]) {
+                        appData.monthlyPlanning[monthKey] = appData.planningTemplates.map(template => ({
+                            id: template.id + '_' + monthKey,
+                            templateId: template.id,
+                            name: template.name,
+                            type: template.type,
+                            target: template.target,
+                            description: template.description,
+                            used: 0,
+                            collected: 0
+                        }));
+                    }
+                } else {
+                    appData.planningTemplates = [];
                 }
                 
                 // Load business
                 const bizResult = await callAPI('getBusiness');
-                if (bizResult.success) {
-                    const business = bizResult.business || [];
-                    appData.business = business.map(biz => ({
+                console.log('Business result:', bizResult);
+                
+                if (bizResult.success && bizResult.business) {
+                    appData.business = bizResult.business.map(biz => ({
                         id: biz.id || 'business_' + Date.now(),
-                        modal: biz.investment || 0,
-                        pemasukan: biz.revenue || 0,
+                        modal: parseFloat(biz.investment) || 0,
+                        pemasukan: parseFloat(biz.revenue) || 0,
                         pengeluaran: 0, // API tidak menyediakan pengeluaran
-                        date: biz.date || new Date().toISOString().split('T')[0]
+                        date: biz.date || new Date().toISOString().split('T')[0],
+                        name: biz.name || 'Data Usaha'
                     }));
                     document.getElementById('businessCount').textContent = appData.business.length;
+                } else {
+                    appData.business = [];
                 }
                 
                 document.getElementById('apiStatus').textContent = 'Connected';
                 document.getElementById('apiStatus').style.color = '#2ecc71';
                 updateDisplay();
+                
+                console.log('Data loaded successfully:', appData);
                 
             } catch (error) {
                 console.error('Error loading data:', error);
@@ -1142,54 +1177,8 @@
             }
         }
         
-        async function saveData() {
-            showLoading();
-            try {
-                // Save planning templates
-                for (const template of appData.planningTemplates) {
-                    const planData = {
-                        name: template.name,
-                        target: template.target,
-                        type: template.type,
-                        notes: template.description,
-                        category: template.category || 'Umum'
-                    };
-                    
-                    // Check if plan exists
-                    if (template.id && template.id.startsWith('plan_')) {
-                        // New plan
-                        await callAPI('addPlan', planData);
-                    } else {
-                        // Update existing plan (simplified - in real app would need update endpoint)
-                        await callAPI('addPlan', planData);
-                    }
-                }
-                
-                // Save business data (simplified)
-                if (appData.business.length > 0) {
-                    const latestBiz = appData.business[appData.business.length - 1];
-                    const bizData = {
-                        name: 'Data Usaha',
-                        investment: latestBiz.modal,
-                        revenue: latestBiz.pemasukan,
-                        date: latestBiz.date
-                    };
-                    await callAPI('addBusiness', bizData);
-                }
-                
-                showToast('Data berhasil disimpan!', 'success');
-                return true;
-            } catch (error) {
-                console.error('Error saving data:', error);
-                showToast('Gagal menyimpan data', 'error');
-                return false;
-            } finally {
-                hideLoading();
-            }
-        }
-        
         // ============================================
-        // FUNGSI PLANNING
+        // FUNGSI PLANNING (DIPERBAIKI)
         // ============================================
         function getCurrentMonthKey() {
             return `${appData.currentYear}-${appData.currentMonth}`;
@@ -1217,7 +1206,7 @@
             const planning = getCurrentMonthPlanning().find(p => p.id === planningId);
             if (!planning) return 0;
             
-            if (planning.type === 'Pengeluaran') {
+            if (planning.type === 'Pengeluaran' || planning.type === 'Tabungan' || planning.type === 'Investasi') {
                 planning.used = appData.transactions
                     .filter(t => t.planningId === planningId && t.type === 'expense')
                     .reduce((sum, t) => sum + t.amount, 0);
@@ -1229,6 +1218,114 @@
                 return Math.max(0, planning.target - planning.collected);
             }
             return 0;
+        }
+        
+        // ============================================
+        // FUNGSI EDIT & HAPUS PLANNING (DIPERBAIKI)
+        // ============================================
+        function editPlanning(planningId) {
+            console.log('Editing planning:', planningId);
+            
+            // Ekstrak template ID dari planning ID (hapus suffix bulan)
+            const templateId = planningId.split('_').slice(0, -1).join('_');
+            console.log('Template ID:', templateId);
+            
+            // Cari template berdasarkan ID
+            const template = appData.planningTemplates.find(t => t.id === templateId);
+            
+            if (!template) {
+                console.error('Template not found for ID:', templateId);
+                showToast('Planning tidak ditemukan!', 'error');
+                return;
+            }
+            
+            console.log('Found template:', template);
+            
+            // Fill form dengan data template
+            document.getElementById('planningModalTitle').textContent = 'Edit Planning';
+            document.getElementById('editingPlanningId').value = template.id;
+            document.getElementById('planningName').value = template.name;
+            document.getElementById('planningType').value = template.type;
+            document.getElementById('planningTarget').value = formatCurrencyInput(template.target.toString());
+            document.getElementById('planningDesc').value = template.description || '';
+            document.getElementById('planningSubmitBtn').innerHTML = '<i class="fas fa-save"></i> Update Planning';
+            
+            // Show modal
+            document.getElementById('planningModal').classList.add('active');
+        }
+        
+        async function deletePlanning(planningId) {
+            console.log('Deleting planning:', planningId);
+            
+            // Ekstrak template ID
+            const templateId = planningId.split('_').slice(0, -1).join('_');
+            const template = appData.planningTemplates.find(t => t.id === templateId);
+            
+            if (!template) {
+                showToast('Planning tidak ditemukan!', 'error');
+                return;
+            }
+            
+            // Cek apakah ada transaksi terkait
+            const relatedTransactions = appData.transactions.filter(t => 
+                t.planningId === planningId || t.planningId === templateId
+            );
+            
+            let message = `Hapus planning "${template.name}"?`;
+            if (relatedTransactions.length > 0) {
+                message += `\n\n⚠️ Planning ini memiliki ${relatedTransactions.length} transaksi terkait.`;
+                if (!confirm(message + '\n\nHapus planning dan semua transaksinya?')) {
+                    return;
+                }
+                
+                // Hapus transaksi terkait dari API
+                for (const trans of relatedTransactions) {
+                    await callAPI('delete', { id: trans.id });
+                }
+            } else {
+                if (!confirm(message)) {
+                    return;
+                }
+            }
+            
+            showLoading();
+            
+            try {
+                // Hapus dari API
+                const result = await callAPI('deletePlan', { id: templateId });
+                
+                if (result.success) {
+                    // Hapus dari data lokal
+                    appData.planningTemplates = appData.planningTemplates.filter(t => t.id !== templateId);
+                    
+                    // Hapus dari monthly planning untuk semua bulan
+                    for (const monthKey in appData.monthlyPlanning) {
+                        appData.monthlyPlanning[monthKey] = appData.monthlyPlanning[monthKey].filter(
+                            p => !p.id.startsWith(templateId + '_')
+                        );
+                    }
+                    
+                    // Hapus transaksi terkait dari data lokal
+                    appData.transactions = appData.transactions.filter(t => 
+                        t.planningId !== planningId && t.planningId !== templateId
+                    );
+                    
+                    showToast(`Planning "${template.name}" berhasil dihapus`, 'success');
+                    
+                    // Update semua tampilan
+                    updateDisplay();
+                    
+                    // Reload data dari API untuk sinkronisasi penuh
+                    setTimeout(() => loadAllData(), 1000);
+                } else {
+                    showToast('Gagal menghapus planning dari server', 'error');
+                }
+            } catch (error) {
+                console.error('Error deleting planning:', error);
+                showToast('Error menghapus planning', 'error');
+            } finally {
+                hideLoading();
+            }
         }
         
         // ============================================
@@ -1256,7 +1353,7 @@
             
             // Save transaction to API
             const transData = {
-                description: name,
+                description: `${name} (Pemasukan Tetap)`,
                 amount: amount,
                 type: 'income',
                 category: 'Pemasukan Tetap',
@@ -1265,7 +1362,10 @@
                 notes: description
             };
             
+            showLoading();
             const result = await callAPI('add', transData);
+            hideLoading();
+            
             if (result.success) {
                 // Reset form
                 document.getElementById('incomeName').value = '';
@@ -1275,6 +1375,8 @@
                 showToast('Pemasukan tetap berhasil ditambahkan!', 'success');
                 updateIncomeSourcesList();
                 loadAllData(); // Reload data
+            } else {
+                showToast('Gagal menyimpan pemasukan', 'error');
             }
         }
         
@@ -1321,6 +1423,48 @@
                 appData.incomeSources = appData.incomeSources.filter(income => income.id !== incomeId);
                 showToast('Pemasukan tetap dihapus', 'success');
                 updateIncomeSourcesList();
+            }
+        }
+        
+        // ============================================
+        // FUNGSI TRANSAKSI
+        // ============================================
+        async function editTransaction(transactionId) {
+            const transaction = appData.transactions.find(t => t.id === transactionId);
+            if (!transaction) return;
+            
+            // Fill form with existing data
+            document.getElementById('transactionFormTitle').innerHTML = '<i class="fas fa-edit"></i> Edit Transaksi';
+            document.getElementById('editingTransactionId').value = transaction.id;
+            document.getElementById('transType').value = transaction.type;
+            document.getElementById('transAmount').value = formatCurrencyInput(transaction.amount.toString());
+            document.getElementById('transDesc').value = transaction.description || '';
+            document.getElementById('transDate').value = transaction.date;
+            document.getElementById('transCategory').value = transaction.category || 'Umum';
+            document.getElementById('transactionSubmitBtn').innerHTML = '<i class="fas fa-save"></i> Update Transaksi';
+            document.getElementById('cancelEditBtn').style.display = 'block';
+            
+            // Switch to transactions tab
+            switchTab('transactions');
+        }
+        
+        async function deleteTransaction(transactionId) {
+            const transaction = appData.transactions.find(t => t.id === transactionId);
+            if (!transaction) return;
+            
+            if (confirm(`Hapus transaksi "${transaction.description}" sebesar ${formatCurrency(transaction.amount)}?`)) {
+                showLoading();
+                // Delete from API
+                const result = await callAPI('delete', { id: transactionId });
+                hideLoading();
+                
+                if (result.success) {
+                    appData.transactions = appData.transactions.filter(t => t.id !== transactionId);
+                    showToast('Transaksi berhasil dihapus!', 'success');
+                    loadAllData(); // Reload data
+                } else {
+                    showToast('Gagal menghapus transaksi', 'error');
+                }
             }
         }
         
@@ -1429,7 +1573,7 @@
                     
                     const remaining = getRemainingForPlanning(plan.id);
                     const progress = plan.target > 0 ? 
-                        (plan.type === 'Pengeluaran' ? 
+                        (plan.type === 'Pengeluaran' || plan.type === 'Tabungan' || plan.type === 'Investasi' ? 
                             (plan.used || 0) / plan.target * 100 : 
                             (plan.collected || 0) / plan.target * 100) : 0;
                     
@@ -1806,14 +1950,14 @@
         
         function updatePlanningSelect() {
             const select = document.getElementById('transPlanning');
-            select.innerHTML = '<option value="">Pilih planning</option>';
+            select.innerHTML = '<option value="">Tidak ada planning</option>';
             
             getCurrentMonthPlanning().forEach(planning => {
                 const option = document.createElement('option');
                 option.value = planning.id;
                 
                 let extraInfo = '';
-                if (planning.type === 'Pengeluaran') {
+                if (planning.type === 'Pengeluaran' || planning.type === 'Tabungan' || planning.type === 'Investasi') {
                     const remaining = getRemainingForPlanning(planning.id);
                     const used = planning.used || 0;
                     extraInfo = ` (Sisa: ${formatCurrency(remaining)})`;
@@ -1846,7 +1990,7 @@
                 let progressHtml = '';
                 let statusText = '';
                 
-                if (planning.type === 'Pengeluaran') {
+                if (planning.type === 'Pengeluaran' || planning.type === 'Tabungan' || planning.type === 'Investasi') {
                     const remaining = getRemainingForPlanning(planning.id);
                     const used = planning.used || 0;
                     const percentage = planning.target > 0 ? Math.min(100, used / planning.target * 100) : 0;
@@ -1921,7 +2065,7 @@
             container.innerHTML = planningItems.slice(0, 5).map(planning => {
                 let planningInfo = '';
                 
-                if (planning.type === 'Pengeluaran') {
+                if (planning.type === 'Pengeluaran' || planning.type === 'Tabungan' || planning.type === 'Investasi') {
                     const remaining = getRemainingForPlanning(planning.id);
                     const used = planning.used || 0;
                     const percentage = planning.target > 0 ? Math.min(100, used / planning.target * 100) : 0;
@@ -2178,43 +2322,6 @@
         }
         
         // ============================================
-        // FUNGSI TRANSAKSI
-        // ============================================
-        async function editTransaction(transactionId) {
-            const transaction = appData.transactions.find(t => t.id === transactionId);
-            if (!transaction) return;
-            
-            // Fill form with existing data
-            document.getElementById('transactionFormTitle').innerHTML = '<i class="fas fa-edit"></i> Edit Transaksi';
-            document.getElementById('editingTransactionId').value = transaction.id;
-            document.getElementById('transType').value = transaction.type;
-            document.getElementById('transAmount').value = formatCurrencyInput(transaction.amount.toString());
-            document.getElementById('transDesc').value = transaction.description || '';
-            document.getElementById('transDate').value = transaction.date;
-            document.getElementById('transCategory').value = transaction.category || 'Umum';
-            document.getElementById('transactionSubmitBtn').innerHTML = '<i class="fas fa-save"></i> Update Transaksi';
-            document.getElementById('cancelEditBtn').style.display = 'block';
-            
-            // Switch to transactions tab
-            switchTab('transactions');
-        }
-        
-        async function deleteTransaction(transactionId) {
-            const transaction = appData.transactions.find(t => t.id === transactionId);
-            if (!transaction) return;
-            
-            if (confirm(`Hapus transaksi "${transaction.description}" sebesar ${formatCurrency(transaction.amount)}?`)) {
-                // Delete from API
-                const result = await callAPI('delete', { id: transactionId });
-                if (result.success) {
-                    appData.transactions = appData.transactions.filter(t => t.id !== transactionId);
-                    showToast('Transaksi berhasil dihapus!', 'success');
-                    loadAllData(); // Reload data
-                }
-            }
-        }
-        
-        // ============================================
         // FUNGSI PLANNING MODAL
         // ============================================
         function openPlanningModal() {
@@ -2227,62 +2334,6 @@
         
         function closePlanningModal() {
             document.getElementById('planningModal').classList.remove('active');
-        }
-        
-        function editPlanning(planningId) {
-            const planning = getCurrentMonthPlanning().find(p => p.id === planningId);
-            if (!planning) return;
-            
-            // Find template
-            const templateIndex = appData.planningTemplates.findIndex(t => t.id === planning.templateId);
-            if (templateIndex === -1) return;
-            
-            const template = appData.planningTemplates[templateIndex];
-            
-            // Fill form with existing data
-            document.getElementById('planningModalTitle').textContent = 'Edit Planning';
-            document.getElementById('editingPlanningId').value = planning.id;
-            document.getElementById('planningName').value = planning.name;
-            document.getElementById('planningType').value = planning.type;
-            document.getElementById('planningTarget').value = formatCurrencyInput(planning.target.toString());
-            document.getElementById('planningDesc').value = planning.description || '';
-            document.getElementById('planningSubmitBtn').innerHTML = '<i class="fas fa-save"></i> Update Planning';
-            
-            // Show modal
-            document.getElementById('planningModal').classList.add('active');
-        }
-        
-        async function deletePlanning(planningId) {
-            const planning = getCurrentMonthPlanning().find(p => p.id === planningId);
-            if (!planning) return;
-            
-            // Check if planning has transactions
-            const planningTransactions = appData.transactions.filter(t => t.planningId === planningId);
-            
-            let message = `Hapus planning "${planning.name}"?`;
-            if (planningTransactions.length > 0) {
-                message += `\n\nPlanning ini memiliki ${planningTransactions.length} transaksi.`;
-                message += `\nHapus planning dan semua transaksinya?`;
-            }
-            
-            if (confirm(message)) {
-                // Remove from monthly planning
-                const monthKey = getCurrentMonthKey();
-                appData.monthlyPlanning[monthKey] = appData.monthlyPlanning[monthKey].filter(p => p.id !== planningId);
-                
-                // Remove template
-                appData.planningTemplates = appData.planningTemplates.filter(t => t.id !== planning.templateId);
-                
-                // Remove related transactions
-                for (const trans of planningTransactions) {
-                    await callAPI('delete', { id: trans.id });
-                }
-                appData.transactions = appData.transactions.filter(t => t.planningId !== planningId);
-                
-                await saveData();
-                showToast(`Planning "${planning.name}" dihapus`, 'success');
-                loadAllData();
-            }
         }
         
         // ============================================
@@ -2306,7 +2357,10 @@
                 date: date
             };
             
+            showLoading();
             const result = await callAPI('addBusiness', businessData);
+            hideLoading();
+            
             if (result.success) {
                 // Clear form
                 document.getElementById('businessModal').value = '';
@@ -2316,6 +2370,8 @@
                 
                 showToast('Data usaha berhasil disimpan!', 'success');
                 loadAllData(); // Reload data
+            } else {
+                showToast('Gagal menyimpan data usaha', 'error');
             }
         }
         
@@ -2559,10 +2615,16 @@
                 const transDate = document.getElementById('transDate').value;
                 const description = document.getElementById('transDesc').value.trim();
                 const category = document.getElementById('transCategory').value;
+                const planningId = document.getElementById('transPlanning').value;
                 const editingTransactionId = document.getElementById('editingTransactionId').value;
                 
                 if (amount <= 0) {
                     showToast('Jumlah harus lebih dari 0!', 'error');
+                    return;
+                }
+                
+                if (!type) {
+                    showToast('Pilih jenis transaksi!', 'error');
                     return;
                 }
                 
@@ -2578,17 +2640,23 @@
                     notes: ''
                 };
                 
+                // Tambah planningId jika ada
+                if (planningId) {
+                    transData.planningId = planningId;
+                }
+                
+                let result;
                 if (editingTransactionId) {
                     // Update existing transaction
                     transData.id = editingTransactionId;
-                    const result = await callAPI('update', transData);
+                    result = await callAPI('update', transData);
                     if (result.success) {
                         showToast('Transaksi berhasil diperbarui!', 'success');
                         loadAllData();
                     }
                 } else {
                     // Add new transaction
-                    const result = await callAPI('add', transData);
+                    result = await callAPI('add', transData);
                     if (result.success) {
                         showToast('Transaksi berhasil disimpan!', 'success');
                         loadAllData();
@@ -2596,6 +2664,11 @@
                 }
                 
                 hideLoading();
+                
+                if (!result.success) {
+                    showToast('Gagal menyimpan transaksi: ' + (result.error || 'Unknown error'), 'error');
+                    return;
+                }
                 
                 // Reset form
                 this.reset();
@@ -2642,17 +2715,18 @@
                     category: 'Planning'
                 };
                 
+                let result;
                 if (editingPlanningId) {
                     // Editing existing planning
-                    planData.id = editingPlanningId.replace(/_[\d-]+$/, ''); // Remove month suffix
-                    const result = await callAPI('updatePlan', planData);
+                    planData.id = editingPlanningId;
+                    result = await callAPI('updatePlan', planData);
                     if (result.success) {
                         showToast(`Planning "${planningName}" berhasil diperbarui!`, 'success');
                         loadAllData();
                     }
                 } else {
                     // Adding new planning
-                    const result = await callAPI('addPlan', planData);
+                    result = await callAPI('addPlan', planData);
                     if (result.success) {
                         showToast(`Planning "${planningName}" berhasil ditambahkan!`, 'success');
                         loadAllData();
@@ -2660,6 +2734,11 @@
                 }
                 
                 hideLoading();
+                
+                if (!result.success) {
+                    showToast('Gagal menyimpan planning: ' + (result.error || 'Unknown error'), 'error');
+                    return;
+                }
                 
                 // Reset form and close modal
                 this.reset();
