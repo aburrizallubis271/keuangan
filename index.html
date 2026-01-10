@@ -986,80 +986,71 @@
         const { jsPDF } = window.jspdf;
         
         // ============================================
-        // KONFIGURASI API - FIXED DENGAN URL ANDA
+        // KONFIGURASI API - SPREADSHEET AS PRIMARY DB
         // ============================================
         const API_CONFIG = {
             BASE_URL: 'https://script.google.com/macros/s/AKfycbzLanJiwCsChOnr4uh_btbko9vo_dl7MWdSyRmUiyaGG8nX8mhdZACf3xISGK_EfOup5w/exec',
             PASSWORD: '1111',
-            useGET: true,
             
             async call(action, data = {}) {
                 try {
                     console.log(`📤 API Request: ${action}`, data);
                     
-                    // Gunakan XMLHttpRequest untuk menghindari CORS issues
-                    return new Promise((resolve) => {
+                    return new Promise((resolve, reject) => {
                         const xhr = new XMLHttpRequest();
                         const params = new URLSearchParams({
                             action: action,
                             password: this.PASSWORD,
-                            data: JSON.stringify(data)
+                            data: JSON.stringify(data),
+                            timestamp: Date.now()
                         });
                         
                         const url = `${this.BASE_URL}?${params.toString()}`;
                         xhr.open('GET', url, true);
+                        xhr.timeout = 10000;
                         
                         xhr.onreadystatechange = () => {
                             if (xhr.readyState === 4) {
-                                console.log(`✅ API ${action} response status:`, xhr.status);
+                                console.log(`📥 API ${action} response:`, xhr.status);
                                 
                                 if (xhr.status === 200) {
                                     try {
                                         const response = JSON.parse(xhr.responseText);
-                                        console.log(`📥 API Response:`, response);
-                                        
-                                        // Simpan ke localStorage
-                                        this.saveToLocalStorage(action, data, response);
-                                        
+                                        console.log(`✅ API Response:`, response);
                                         resolve({ 
                                             success: true, 
-                                            data: response,
-                                            message: 'API request successful'
+                                            data: response
                                         });
                                     } catch (e) {
-                                        console.error('Error parsing response:', e);
+                                        console.error('❌ Parse error:', e);
                                         resolve({
                                             success: false,
-                                            error: 'Invalid JSON response',
-                                            offline: true,
-                                            message: 'Using local storage'
+                                            error: 'Invalid JSON response'
                                         });
                                     }
                                 } else {
-                                    // Simpan ke localStorage sebagai fallback
-                                    this.saveToLocalStorage(action, data);
-                                    
+                                    console.error(`❌ API Error: ${xhr.status}`);
                                     resolve({
                                         success: false,
-                                        error: `HTTP ${xhr.status}`,
-                                        offline: true,
-                                        message: 'Saved locally - API error'
+                                        error: `HTTP ${xhr.status}`
                                     });
                                 }
                             }
                         };
                         
-                        xhr.onerror = () => {
-                            console.error(`❌ API Error (${action}): Network error`);
-                            
-                            // Simpan ke localStorage sebagai fallback
-                            this.saveToLocalStorage(action, data);
-                            
+                        xhr.ontimeout = () => {
+                            console.error(`❌ API Timeout: ${action}`);
                             resolve({
                                 success: false,
-                                error: 'Network error',
-                                offline: true,
-                                message: 'Saved locally - Network error'
+                                error: 'Request timeout'
+                            });
+                        };
+                        
+                        xhr.onerror = () => {
+                            console.error(`❌ Network Error: ${action}`);
+                            resolve({
+                                success: false,
+                                error: 'Network error'
                             });
                         };
                         
@@ -1067,262 +1058,429 @@
                     });
                     
                 } catch (error) {
-                    console.error(`❌ API Error (${action}):`, error);
-                    
-                    // Simpan ke localStorage sebagai fallback
-                    this.saveToLocalStorage(action, data);
-                    
+                    console.error(`❌ API Exception: ${action}`, error);
                     return { 
                         success: false, 
-                        error: error.message,
-                        offline: true,
-                        message: 'Saved locally - Exception'
+                        error: error.message
                     };
                 }
             },
             
-            // Simpan ke localStorage
-            saveToLocalStorage(action, data, apiResponse = null) {
+            // ============================================
+            // FUNGSI UTAMA UNTUK DATABASE
+            // ============================================
+            
+            // 1. LOAD SEMUA DATA DARI SPREADSHEET (PRIMARY SOURCE)
+            async loadAllData() {
+                console.log('🔄 Loading all data from spreadsheet...');
+                
+                try {
+                    const result = await this.call('getAll', {});
+                    
+                    if (result.success && result.data) {
+                        console.log('✅ Data loaded from spreadsheet:', result.data);
+                        
+                        // Simpan cache
+                        this.saveCache(result.data);
+                        
+                        return {
+                            source: 'spreadsheet',
+                            timestamp: new Date().toISOString(),
+                            data: result.data
+                        };
+                    } else {
+                        console.log('⚠️ Using cached data');
+                        return this.loadFromCache();
+                    }
+                    
+                } catch (error) {
+                    console.error('❌ Error loading data:', error);
+                    return this.loadFromCache();
+                }
+            },
+            
+            // 2. SAVE CACHE KE LOCALSTORAGE
+            saveCache(apiData) {
                 try {
                     const timestamp = new Date().toISOString();
                     
-                    // Handle berdasarkan action type
-                    switch(action) {
-                        case 'add':
-                        case 'update':
-                        case 'delete':
-                            this.saveTransactionToLocal(data, action);
-                            break;
-                            
-                        case 'addPlan':
-                        case 'updatePlan':
-                        case 'deletePlan':
-                            this.savePlanToLocal(data, action);
-                            break;
-                            
-                        case 'addBusiness':
-                            this.saveBusinessToLocal(data);
-                            break;
-                            
-                        case 'getAll':
-                            if (apiResponse) {
-                                if (apiResponse.transactions) {
-                                    localStorage.setItem('local_transactions', JSON.stringify(apiResponse.transactions));
-                                }
-                                if (apiResponse.plans) {
-                                    localStorage.setItem('local_plans', JSON.stringify(apiResponse.plans));
-                                }
-                                if (apiResponse.business) {
-                                    localStorage.setItem('local_business', JSON.stringify(apiResponse.business));
-                                }
-                            }
-                            break;
+                    if (apiData.transactions) {
+                        localStorage.setItem('cache_transactions', JSON.stringify({
+                            data: apiData.transactions,
+                            timestamp: timestamp,
+                            source: 'spreadsheet'
+                        }));
                     }
                     
-                    console.log(`💾 Saved ${action} to localStorage`);
-                    
-                } catch (e) {
-                    console.error('Error saving to localStorage:', e);
-                }
-            },
-            
-            saveTransactionToLocal(transaction, action) {
-                try {
-                    let transactions = JSON.parse(localStorage.getItem('local_transactions') || '[]');
-                    
-                    if (action === 'delete') {
-                        // Hapus transaksi
-                        transactions = transactions.filter(t => t.id !== transaction.id);
-                    } else if (action === 'update') {
-                        // Update transaksi
-                        const index = transactions.findIndex(t => t.id === transaction.id);
-                        if (index >= 0) {
-                            transactions[index] = { 
-                                ...transactions[index], 
-                                ...transaction,
-                                updatedAt: new Date().toISOString()
-                            };
-                        } else {
-                            transactions.push({
-                                ...transaction,
-                                createdAt: new Date().toISOString()
-                            });
-                        }
-                    } else {
-                        // Tambah transaksi baru
-                        transactions.push({
-                            ...transaction,
-                            id: transaction.id || 'trans_' + Date.now(),
-                            createdAt: new Date().toISOString()
-                        });
+                    if (apiData.plans) {
+                        localStorage.setItem('cache_plans', JSON.stringify({
+                            data: apiData.plans,
+                            timestamp: timestamp,
+                            source: 'spreadsheet'
+                        }));
                     }
                     
-                    localStorage.setItem('local_transactions', JSON.stringify(transactions));
-                    return transactions;
-                } catch (e) {
-                    console.error('Error saving transaction locally:', e);
-                    return [];
-                }
-            },
-            
-            savePlanToLocal(plan, action) {
-                try {
-                    let plans = JSON.parse(localStorage.getItem('local_plans') || '[]');
-                    
-                    if (action === 'deletePlan') {
-                        // Hapus planning
-                        plans = plans.filter(p => p.id !== plan.id);
-                    } else if (action === 'updatePlan') {
-                        // Update planning
-                        const index = plans.findIndex(p => p.id === plan.id);
-                        if (index >= 0) {
-                            plans[index] = { 
-                                ...plans[index], 
-                                ...plan,
-                                updatedAt: new Date().toISOString()
-                            };
-                        } else {
-                            plans.push({
-                                ...plan,
-                                createdAt: new Date().toISOString()
-                            });
-                        }
-                    } else {
-                        // Tambah planning baru
-                        plans.push({
-                            ...plan,
-                            id: plan.id || 'plan_' + Date.now(),
-                            createdAt: new Date().toISOString()
-                        });
+                    if (apiData.business) {
+                        localStorage.setItem('cache_business', JSON.stringify({
+                            data: apiData.business,
+                            timestamp: timestamp,
+                            source: 'spreadsheet'
+                        }));
                     }
                     
-                    localStorage.setItem('local_plans', JSON.stringify(plans));
-                    return plans;
+                    console.log('💾 Cache saved');
+                    
                 } catch (e) {
-                    console.error('Error saving plan locally:', e);
-                    return [];
+                    console.error('Error saving cache:', e);
                 }
             },
             
-            saveBusinessToLocal(business) {
+            // 3. LOAD FROM CACHE
+            loadFromCache() {
                 try {
-                    let businesses = JSON.parse(localStorage.getItem('local_business') || '[]');
-                    
-                    businesses.push({
-                        ...business,
-                        id: business.id || 'business_' + Date.now(),
-                        createdAt: new Date().toISOString()
-                    });
-                    
-                    localStorage.setItem('local_business', JSON.stringify(businesses));
-                    return businesses;
-                } catch (e) {
-                    console.error('Error saving business locally:', e);
-                    return [];
-                }
-            },
-            
-            // Load semua data dari localStorage
-            loadFromLocalStorage() {
-                try {
-                    console.log('📂 Loading all data from localStorage...');
+                    console.log('📂 Loading from cache...');
                     
                     const result = {
-                        transactions: [],
-                        plans: [],
-                        business: [],
-                        incomeSources: []
+                        source: 'cache',
+                        timestamp: new Date().toISOString(),
+                        data: {
+                            transactions: [],
+                            plans: [],
+                            business: []
+                        }
                     };
                     
-                    // Load transactions
-                    const localTrans = JSON.parse(localStorage.getItem('local_transactions') || '[]');
-                    result.transactions = localTrans.map(t => ({
-                        ...t,
-                        amount: parseFloat(t.amount) || 0,
-                        date: t.date || new Date().toISOString().split('T')[0],
-                        type: t.type || 'expense'
-                    }));
+                    // Load transactions cache
+                    try {
+                        const cache = JSON.parse(localStorage.getItem('cache_transactions') || 'null');
+                        if (cache && cache.data) {
+                            result.data.transactions = cache.data;
+                        }
+                    } catch (e) {
+                        console.error('Error loading transactions cache:', e);
+                    }
                     
-                    // Load plans
-                    const localPlans = JSON.parse(localStorage.getItem('local_plans') || '[]');
-                    result.plans = localPlans.map(p => {
-                        let planType = p.type || 'Pengeluaran';
-                        if (p.type === 'income') planType = 'Pemasukan';
-                        if (p.type === 'Pengeluaran') planType = 'Pengeluaran';
-                        if (p.type === 'Tabungan') planType = 'Tabungan';
-                        if (p.type === 'Investasi') planType = 'Investasi';
-                        
-                        return {
-                            id: p.id || `plan_${Date.now()}`,
-                            name: p.name || 'Unnamed Plan',
-                            type: planType,
-                            target: parseFloat(p.target) || 0,
-                            description: p.notes || p.description || '',
-                            category: p.category || 'Umum'
-                        };
-                    });
+                    // Load plans cache
+                    try {
+                        const cache = JSON.parse(localStorage.getItem('cache_plans') || 'null');
+                        if (cache && cache.data) {
+                            result.data.plans = cache.data;
+                        }
+                    } catch (e) {
+                        console.error('Error loading plans cache:', e);
+                    }
                     
-                    // Load business
-                    const localBiz = JSON.parse(localStorage.getItem('local_business') || '[]');
-                    result.business = localBiz.map(b => ({
-                        ...b,
-                        modal: parseFloat(b.modal) || parseFloat(b.investment) || 0,
-                        pemasukan: parseFloat(b.pemasukan) || parseFloat(b.revenue) || 0,
-                        pengeluaran: parseFloat(b.pengeluaran) || 0,
-                        date: b.date || new Date().toISOString().split('T')[0]
-                    }));
+                    // Load business cache
+                    try {
+                        const cache = JSON.parse(localStorage.getItem('cache_business') || 'null');
+                        if (cache && cache.data) {
+                            result.data.business = cache.data;
+                        }
+                    } catch (e) {
+                        console.error('Error loading business cache:', e);
+                    }
                     
-                    // Load income sources
-                    const localIncome = JSON.parse(localStorage.getItem('local_income') || '[]');
-                    result.incomeSources = localIncome.map(i => ({
-                        ...i,
-                        amount: parseFloat(i.amount) || 0
-                    }));
-                    
-                    console.log('📊 Loaded from localStorage:', {
-                        transactions: result.transactions.length,
-                        plans: result.plans.length,
-                        business: result.business.length,
-                        incomeSources: result.incomeSources.length
+                    console.log('📊 Cache loaded:', {
+                        transactions: result.data.transactions.length,
+                        plans: result.data.plans.length,
+                        business: result.data.business.length
                     });
                     
                     return result;
                     
                 } catch (error) {
-                    console.error('❌ Error loading from localStorage:', error);
+                    console.error('❌ Error loading cache:', error);
                     return {
-                        transactions: [],
-                        plans: [],
-                        business: [],
-                        incomeSources: []
+                        source: 'error',
+                        timestamp: new Date().toISOString(),
+                        data: {
+                            transactions: [],
+                            plans: [],
+                            business: []
+                        }
                     };
                 }
             },
             
-            // Test koneksi API
+            // 4. SIMPAN TRANSAKSI KE SPREADSHEET (PRIMARY)
+            async saveTransaction(transactionData, isEdit = false) {
+                const action = isEdit ? 'update' : 'add';
+                
+                try {
+                    console.log(`💾 Saving transaction to spreadsheet (${action})...`);
+                    
+                    const result = await this.call(action, transactionData);
+                    
+                    if (result.success) {
+                        console.log('✅ Transaction saved to spreadsheet');
+                        
+                        // Tambah ke pending untuk cache update
+                        this.addToPending('transaction', transactionData, action, result.data);
+                        
+                        return {
+                            success: true,
+                            savedToSpreadsheet: true,
+                            data: result.data
+                        };
+                    } else {
+                        console.log('⚠️ Failed to save to spreadsheet, using local cache');
+                        
+                        // Simpan ke local cache sebagai fallback
+                        this.saveToLocalFallback('transaction', transactionData, action);
+                        
+                        return {
+                            success: true,
+                            savedToSpreadsheet: false,
+                            savedLocally: true
+                        };
+                    }
+                    
+                } catch (error) {
+                    console.error('❌ Error saving transaction:', error);
+                    
+                    // Simpan ke local cache sebagai fallback
+                    this.saveToLocalFallback('transaction', transactionData, action);
+                    
+                    return {
+                        success: false,
+                        savedToSpreadsheet: false,
+                        savedLocally: true,
+                        error: error.message
+                    };
+                }
+            },
+            
+            // 5. SIMPAN PLANNING KE SPREADSHEET
+            async savePlan(planData, isEdit = false) {
+                const action = isEdit ? 'updatePlan' : 'addPlan';
+                
+                try {
+                    console.log(`💾 Saving plan to spreadsheet (${action})...`);
+                    
+                    const result = await this.call(action, planData);
+                    
+                    if (result.success) {
+                        console.log('✅ Plan saved to spreadsheet');
+                        
+                        // Tambah ke pending untuk cache update
+                        this.addToPending('plan', planData, action, result.data);
+                        
+                        return {
+                            success: true,
+                            savedToSpreadsheet: true,
+                            data: result.data
+                        };
+                    } else {
+                        console.log('⚠️ Failed to save to spreadsheet, using local cache');
+                        
+                        // Simpan ke local cache sebagai fallback
+                        this.saveToLocalFallback('plan', planData, action);
+                        
+                        return {
+                            success: true,
+                            savedToSpreadsheet: false,
+                            savedLocally: true
+                        };
+                    }
+                    
+                } catch (error) {
+                    console.error('❌ Error saving plan:', error);
+                    
+                    // Simpan ke local cache sebagai fallback
+                    this.saveToLocalFallback('plan', planData, action);
+                    
+                    return {
+                        success: false,
+                        savedToSpreadsheet: false,
+                        savedLocally: true,
+                        error: error.message
+                    };
+                }
+            },
+            
+            // 6. SIMPAN BUSINESS KE SPREADSHEET
+            async saveBusiness(businessData) {
+                try {
+                    console.log('💾 Saving business to spreadsheet...');
+                    
+                    const result = await this.call('addBusiness', businessData);
+                    
+                    if (result.success) {
+                        console.log('✅ Business saved to spreadsheet');
+                        
+                        // Tambah ke pending untuk cache update
+                        this.addToPending('business', businessData, 'addBusiness', result.data);
+                        
+                        return {
+                            success: true,
+                            savedToSpreadsheet: true,
+                            data: result.data
+                        };
+                    } else {
+                        console.log('⚠️ Failed to save to spreadsheet, using local cache');
+                        
+                        // Simpan ke local cache sebagai fallback
+                        this.saveToLocalFallback('business', businessData, 'addBusiness');
+                        
+                        return {
+                            success: true,
+                            savedToSpreadsheet: false,
+                            savedLocally: true
+                        };
+                    }
+                    
+                } catch (error) {
+                    console.error('❌ Error saving business:', error);
+                    
+                    // Simpan ke local cache sebagai fallback
+                    this.saveToLocalFallback('business', businessData, 'addBusiness');
+                    
+                    return {
+                        success: false,
+                        savedToSpreadsheet: false,
+                        savedLocally: true,
+                        error: error.message
+                    };
+                }
+            },
+            
+            // 7. PENDING SYSTEM untuk sync data
+            addToPending(type, data, action, apiResponse = null) {
+                try {
+                    const pending = JSON.parse(localStorage.getItem('pending_updates') || '[]');
+                    
+                    pending.push({
+                        type: type,
+                        action: action,
+                        data: data,
+                        apiResponse: apiResponse,
+                        timestamp: new Date().toISOString(),
+                        synced: apiResponse ? true : false
+                    });
+                    
+                    localStorage.setItem('pending_updates', JSON.stringify(pending));
+                    console.log(`📝 Added to pending: ${type} - ${action}`);
+                    
+                } catch (e) {
+                    console.error('Error adding to pending:', e);
+                }
+            },
+            
+            // 8. FALLBACK SYSTEM untuk offline mode
+            saveToLocalFallback(type, data, action) {
+                try {
+                    const fallback = JSON.parse(localStorage.getItem('local_fallback') || '[]');
+                    
+                    fallback.push({
+                        type: type,
+                        action: action,
+                        data: data,
+                        timestamp: new Date().toISOString()
+                    });
+                    
+                    localStorage.setItem('local_fallback', JSON.stringify(fallback));
+                    console.log(`💾 Saved to local fallback: ${type} - ${action}`);
+                    
+                } catch (e) {
+                    console.error('Error saving to fallback:', e);
+                }
+            },
+            
+            // 9. TEST KONEKSI API
             async testConnection() {
                 try {
-                    return await this.call('ping', {});
+                    const result = await this.call('ping', {});
+                    return {
+                        success: result.success,
+                        connected: result.success,
+                        message: result.success ? 'Connected to spreadsheet' : 'Connection failed'
+                    };
                 } catch (error) {
                     return {
                         success: false,
-                        error: error.message,
-                        offline: true
+                        connected: false,
+                        message: 'Connection error: ' + error.message
                     };
                 }
             },
             
-            // Ambil semua data dari API
-            async fetchAllData() {
+            // 10. SYNC PENDING UPDATES
+            async syncPendingUpdates() {
                 try {
-                    const result = await this.call('getAll', {});
-                    if (result.success && result.data) {
-                        return result.data;
+                    const pending = JSON.parse(localStorage.getItem('pending_updates') || '[]');
+                    
+                    if (pending.length === 0) {
+                        console.log('✅ No pending updates to sync');
+                        return { synced: 0, total: 0 };
                     }
-                    return null;
+                    
+                    console.log(`🔄 Syncing ${pending.length} pending updates...`);
+                    
+                    let syncedCount = 0;
+                    const updatedPending = [];
+                    
+                    for (const item of pending) {
+                        if (!item.synced && item.apiResponse) {
+                            // Update cache dengan data dari API
+                            this.updateCacheFromResponse(item.type, item.apiResponse);
+                            syncedCount++;
+                        } else {
+                            updatedPending.push(item);
+                        }
+                    }
+                    
+                    localStorage.setItem('pending_updates', JSON.stringify(updatedPending));
+                    
+                    console.log(`✅ ${syncedCount} updates synced to cache`);
+                    return { synced: syncedCount, total: pending.length };
+                    
                 } catch (error) {
-                    console.error('Error fetching all data:', error);
-                    return null;
+                    console.error('❌ Error syncing pending updates:', error);
+                    return { synced: 0, total: 0 };
+                }
+            },
+            
+            // 11. UPDATE CACHE DARI API RESPONSE
+            updateCacheFromResponse(type, apiResponse) {
+                try {
+                    const timestamp = new Date().toISOString();
+                    
+                    switch(type) {
+                        case 'transaction':
+                            if (apiResponse.transactions) {
+                                localStorage.setItem('cache_transactions', JSON.stringify({
+                                    data: apiResponse.transactions,
+                                    timestamp: timestamp,
+                                    source: 'spreadsheet'
+                                }));
+                            }
+                            break;
+                            
+                        case 'plan':
+                            if (apiResponse.plans) {
+                                localStorage.setItem('cache_plans', JSON.stringify({
+                                    data: apiResponse.plans,
+                                    timestamp: timestamp,
+                                    source: 'spreadsheet'
+                                }));
+                            }
+                            break;
+                            
+                        case 'business':
+                            if (apiResponse.business) {
+                                localStorage.setItem('cache_business', JSON.stringify({
+                                    data: apiResponse.business,
+                                    timestamp: timestamp,
+                                    source: 'spreadsheet'
+                                }));
+                            }
+                            break;
+                    }
+                    
+                    console.log(`🔄 Cache updated for ${type}`);
+                    
+                } catch (e) {
+                    console.error('Error updating cache:', e);
                 }
             }
         };
@@ -1340,6 +1498,7 @@
             transactions: [],
             business: [],
             apiConnected: false,
+            dataSource: 'unknown',
             lastSync: null
         };
         
@@ -1350,92 +1509,121 @@
         ];
         
         // ============================================
-        // FUNGSI UTAMA
+        // FUNGSI UTAMA APLIKASI
         // ============================================
         async function initializeApp() {
             showLoading();
             
             try {
-                console.log('🚀 Initializing FlexiBudget...');
+                console.log('🚀 Initializing FlexiBudget 2.0...');
                 
                 // Test koneksi API
                 const testResult = await API_CONFIG.testConnection();
                 
-                if (testResult.success) {
+                if (testResult.connected) {
                     appData.apiConnected = true;
-                    document.getElementById('apiStatus').textContent = 'Connected';
+                    document.getElementById('apiStatus').textContent = 'Connected ✓';
                     document.getElementById('apiStatus').style.color = '#2ecc71';
-                    document.getElementById('apiStatusInfo').textContent = 'API Connected';
+                    document.getElementById('apiStatusInfo').textContent = 'Spreadsheet Connected';
                     
-                    showToast('✅ Terhubung ke API', 'success');
-                    
-                    // Coba ambil data dari API
-                    try {
-                        const apiData = await API_CONFIG.fetchAllData();
-                        if (apiData) {
-                            // Update data lokal dengan data dari API
-                            if (apiData.transactions) {
-                                appData.transactions = apiData.transactions;
-                                localStorage.setItem('local_transactions', JSON.stringify(apiData.transactions));
-                            }
-                            if (apiData.plans) {
-                                appData.planningTemplates = apiData.plans;
-                                localStorage.setItem('local_plans', JSON.stringify(apiData.plans));
-                            }
-                            if (apiData.business) {
-                                appData.business = apiData.business;
-                                localStorage.setItem('local_business', JSON.stringify(apiData.business));
-                            }
-                            
-                            showToast('✅ Data berhasil disinkronisasi', 'success');
-                        }
-                    } catch (apiError) {
-                        console.error('Error fetching API data:', apiError);
-                        // Lanjut dengan data lokal
-                    }
+                    showToast('✅ Terhubung ke database utama', 'success');
                 } else {
                     appData.apiConnected = false;
                     document.getElementById('apiStatus').textContent = 'Offline Mode';
                     document.getElementById('apiStatus').style.color = '#ff9f1c';
-                    document.getElementById('apiStatusInfo').textContent = 'Offline (Using Cache)';
+                    document.getElementById('apiStatusInfo').textContent = 'Offline (Cache)';
                     
-                    showToast('⚠️ Mode offline - menggunakan data lokal', 'warning');
+                    showToast('⚠️ Mode offline - menggunakan cache lokal', 'warning');
                 }
                 
-                // Load data dari cache
-                loadFromCache();
+                // LOAD DATA DARI SPREADSHEET (PRIMARY SOURCE)
+                const loadedData = await API_CONFIG.loadAllData();
+                
+                console.log(`📊 Data source: ${loadedData.source}`);
+                appData.dataSource = loadedData.source;
+                
+                // UPDATE APPDATA DENGAN DATA YANG DILOAD
+                if (loadedData.data) {
+                    // Transactions
+                    if (loadedData.data.transactions) {
+                        appData.transactions = loadedData.data.transactions.map(t => ({
+                            id: t.id || `trans_${Date.now()}`,
+                            description: t.description || '',
+                            amount: parseFloat(t.amount) || 0,
+                            type: t.type || 'expense',
+                            category: t.category || 'Umum',
+                            date: t.date || new Date().toISOString().split('T')[0],
+                            planningId: t.planningId || null,
+                            notes: t.notes || ''
+                        }));
+                    }
+                    
+                    // Plans
+                    if (loadedData.data.plans) {
+                        appData.planningTemplates = loadedData.data.plans.map(p => ({
+                            id: p.id || `plan_${Date.now()}`,
+                            name: p.name || 'Unnamed Plan',
+                            type: p.type === 'income' ? 'Pemasukan' : 
+                                  p.type === 'Tabungan' ? 'Tabungan' :
+                                  p.type === 'Investasi' ? 'Investasi' : 'Pengeluaran',
+                            target: parseFloat(p.target) || 0,
+                            description: p.notes || p.description || '',
+                            category: p.category || 'Planning'
+                        }));
+                    }
+                    
+                    // Business
+                    if (loadedData.data.business) {
+                        appData.business = loadedData.data.business.map(b => ({
+                            id: b.id || `business_${Date.now()}`,
+                            modal: parseFloat(b.modal) || parseFloat(b.investment) || 0,
+                            pemasukan: parseFloat(b.pemasukan) || parseFloat(b.revenue) || 0,
+                            pengeluaran: parseFloat(b.pengeluaran) || 0,
+                            date: b.date || new Date().toISOString().split('T')[0],
+                            name: b.name || 'Data Usaha'
+                        }));
+                    }
+                    
+                    // Sync pending updates jika online
+                    if (appData.apiConnected) {
+                        setTimeout(async () => {
+                            const syncResult = await API_CONFIG.syncPendingUpdates();
+                            if (syncResult.synced > 0) {
+                                console.log(`🔄 ${syncResult.synced} updates synced`);
+                                updateDisplay();
+                            }
+                        }, 1000);
+                    }
+                    
+                    // Inisialisasi monthly planning
+                    initializeMonthlyPlanning();
+                    
+                    // Update storage mode display
+                    document.getElementById('storageMode').textContent = 
+                        appData.apiConnected ? 
+                        'Google Spreadsheet (Primary)' : 
+                        'Local Cache (Offline)';
+                        
+                } else {
+                    console.log('⚠️ No data loaded');
+                    initializeMonthlyPlanning();
+                }
                 
             } catch (error) {
-                console.error('Initialization error:', error);
+                console.error('❌ Initialization error:', error);
                 document.getElementById('apiStatus').textContent = 'Error';
                 document.getElementById('apiStatus').style.color = '#e74c3c';
                 document.getElementById('apiStatusInfo').textContent = 'Initialization Error';
                 
                 showToast('❌ Error inisialisasi aplikasi', 'error');
                 
-                // Load dari cache sebagai fallback
-                loadFromCache();
+                // Initialize dengan data kosong
+                initializeMonthlyPlanning();
                 
             } finally {
                 hideLoading();
                 updateDisplay();
             }
-        }
-        
-        function loadFromCache() {
-            console.log('📂 Loading from cache...');
-            
-            const cachedData = API_CONFIG.loadFromLocalStorage();
-            
-            appData.planningTemplates = cachedData.plans || [];
-            appData.transactions = cachedData.transactions || [];
-            appData.business = cachedData.business || [];
-            appData.incomeSources = cachedData.incomeSources || [];
-            
-            // Inisialisasi monthly planning
-            initializeMonthlyPlanning();
-            
-            showToast('Data dimuat dari cache lokal', 'info');
         }
         
         function initializeMonthlyPlanning() {
@@ -1488,7 +1676,7 @@
         }
         
         // ============================================
-        // FUNGSI TAMBAH PEMASUKAN
+        // FUNGSI TAMBAH PEMASUKAN TETAP
         // ============================================
         async function addIncomeSource() {
             const name = document.getElementById('incomeName').value.trim();
@@ -1515,7 +1703,7 @@
             localIncome.push(incomeSource);
             localStorage.setItem('local_income', JSON.stringify(localIncome));
             
-            // Simpan transaksi terkait ke API
+            // Buat transaksi terkait
             const transData = {
                 description: `${name} (Pemasukan Tetap)`,
                 amount: amount,
@@ -1525,7 +1713,13 @@
                 notes: description
             };
             
-            await API_CONFIG.call('add', transData);
+            // Simpan ke spreadsheet jika online
+            if (appData.apiConnected) {
+                await API_CONFIG.saveTransaction(transData, false);
+            } else {
+                // Simpan ke fallback
+                API_CONFIG.saveToLocalFallback('transaction', transData, 'add');
+            }
             
             // Reset form
             document.getElementById('incomeName').value = '';
@@ -1596,23 +1790,32 @@
             showLoading();
             
             try {
-                const action = isEdit ? 'update' : 'add';
-                const result = await API_CONFIG.call(action, formData);
+                // Gunakan API_CONFIG untuk simpan ke spreadsheet
+                const result = await API_CONFIG.saveTransaction(formData, isEdit);
                 
-                if (result.success || result.offline) {
-                    if (isEdit) {
-                        const index = appData.transactions.findIndex(t => t.id === formData.id);
-                        if (index !== -1) {
-                            appData.transactions[index] = formData;
+                if (result.success) {
+                    if (result.savedToSpreadsheet) {
+                        // Update data dari response API
+                        if (result.data && result.data.transactions) {
+                            appData.transactions = result.data.transactions;
                         }
+                        showToast(`Transaksi ${isEdit ? 'diperbarui' : 'disimpan'} ke database utama!`, 'success');
                     } else {
-                        appData.transactions.push({
-                            ...formData,
-                            id: formData.id || 'trans_' + Date.now()
-                        });
+                        // Simpan ke data lokal sementara
+                        if (isEdit) {
+                            const index = appData.transactions.findIndex(t => t.id === formData.id);
+                            if (index !== -1) {
+                                appData.transactions[index] = formData;
+                            }
+                        } else {
+                            appData.transactions.push({
+                                ...formData,
+                                id: formData.id || 'trans_' + Date.now()
+                            });
+                        }
+                        showToast(`Transaksi ${isEdit ? 'diperbarui' : 'disimpan'} secara lokal (akan sync nanti)`, 'warning');
                     }
                     
-                    showToast(`Transaksi ${isEdit ? 'diperbarui' : 'disimpan'}!`, 'success');
                     return true;
                 } else {
                     showToast('Gagal menyimpan transaksi', 'error');
@@ -1655,9 +1858,16 @@
                 showLoading();
                 
                 try {
-                    await API_CONFIG.call('delete', { id: transactionId });
+                    // Coba hapus dari spreadsheet
+                    if (appData.apiConnected) {
+                        await API_CONFIG.call('delete', { id: transactionId });
+                    }
                     
+                    // Hapus dari data lokal
                     appData.transactions = appData.transactions.filter(t => t.id !== transactionId);
+                    
+                    // Update cache
+                    API_CONFIG.addToPending('transaction', { id: transactionId }, 'delete');
                     
                     showToast('Transaksi berhasil dihapus!', 'success');
                     updateDisplay();
@@ -1711,13 +1921,12 @@
                     category: 'Planning'
                 };
                 
-                let action, successMessage;
+                let isEdit = false;
                 
                 if (editingPlanningId) {
                     // Edit existing planning
                     planData.id = editingPlanningId;
-                    action = 'updatePlan';
-                    successMessage = `Planning "${planningName}" berhasil diperbarui!`;
+                    isEdit = true;
                     
                     // Update local data
                     const index = appData.planningTemplates.findIndex(p => p.id === editingPlanningId);
@@ -1733,8 +1942,6 @@
                 } else {
                     // Add new planning
                     planData.id = 'plan_' + Date.now();
-                    action = 'addPlan';
-                    successMessage = `Planning "${planningName}" berhasil ditambahkan!`;
                     
                     // Add to local data
                     const newPlan = {
@@ -1766,10 +1973,14 @@
                     });
                 }
                 
-                // Kirim ke API
-                const result = await API_CONFIG.call(action, planData);
+                // Simpan ke spreadsheet
+                const result = await API_CONFIG.savePlan(planData, isEdit);
                 
-                if (result.success || result.offline) {
+                if (result.success) {
+                    const successMessage = isEdit ? 
+                        `Planning "${planningName}" berhasil diperbarui!` :
+                        `Planning "${planningName}" berhasil ditambahkan!`;
+                    
                     showToast(successMessage, 'success');
                     
                     // Reset form and close modal
@@ -1840,7 +2051,10 @@
             showLoading();
             
             try {
-                await API_CONFIG.call('deletePlan', { id: templateId });
+                // Coba hapus dari spreadsheet
+                if (appData.apiConnected) {
+                    await API_CONFIG.call('deletePlan', { id: templateId });
+                }
                 
                 // Update local data
                 appData.planningTemplates = appData.planningTemplates.filter(t => t.id !== templateId);
@@ -1857,6 +2071,9 @@
                 appData.transactions = appData.transactions.filter(t => 
                     t.planningId !== planningId && t.planningId !== templateId
                 );
+                
+                // Update cache
+                API_CONFIG.addToPending('plan', { id: templateId }, 'deletePlan');
                 
                 showToast(`Planning "${template.name}" dihapus`, 'success');
                 updateDisplay();
@@ -1894,24 +2111,33 @@
             showLoading();
             
             try {
-                const result = await API_CONFIG.call('addBusiness', businessData);
+                const result = await API_CONFIG.saveBusiness(businessData);
                 
-                if (result.success || result.offline) {
-                    appData.business.push({
-                        id: 'business_' + Date.now(),
-                        modal: modal,
-                        pemasukan: pemasukan,
-                        pengeluaran: pengeluaran,
-                        date: date,
-                        name: 'Data Usaha'
-                    });
+                if (result.success) {
+                    if (result.savedToSpreadsheet) {
+                        // Update dari response API
+                        if (result.data && result.data.business) {
+                            appData.business = result.data.business;
+                        }
+                        showToast('Data usaha berhasil disimpan ke database utama!', 'success');
+                    } else {
+                        // Simpan ke lokal
+                        appData.business.push({
+                            id: 'business_' + Date.now(),
+                            modal: modal,
+                            pemasukan: pemasukan,
+                            pengeluaran: pengeluaran,
+                            date: date,
+                            name: 'Data Usaha'
+                        });
+                        showToast('Data usaha disimpan secara lokal (akan sync nanti)', 'warning');
+                    }
                     
                     document.getElementById('businessModal').value = '';
                     document.getElementById('businessPemasukan').value = '';
                     document.getElementById('businessPengeluaran').value = '';
                     document.getElementById('businessDate').value = '';
                     
-                    showToast('Data usaha berhasil disimpan!', 'success');
                     updateDisplay();
                 } else {
                     showToast('Gagal menyimpan data usaha', 'error');
@@ -2142,7 +2368,7 @@
         // FUNGSI TAMPILAN
         // ============================================
         function updateDisplay() {
-            console.log('🔄 Updating display...', appData);
+            console.log('🔄 Updating display...');
             
             // Update month display
             updateMonthDisplay();
@@ -2246,8 +2472,6 @@
         function updatePlanningList() {
             const container = document.getElementById('planningItemsList');
             const planningItems = getCurrentMonthPlanning();
-            
-            console.log('📋 Planning items:', planningItems);
             
             if (planningItems.length === 0) {
                 container.innerHTML = `
@@ -2702,6 +2926,7 @@
                         transactions: [],
                         business: [],
                         apiConnected: false,
+                        dataSource: 'reset',
                         lastSync: null
                     };
                     
@@ -2864,13 +3089,13 @@
                 updateTransactionHistory();
             });
             
-            // Auto-refresh setiap 60 detik
+            // Auto-refresh setiap 30 detik jika online
             setInterval(() => {
                 if (appData.apiConnected) {
-                    console.log('🔄 Auto-refresh data');
-                    updateDisplay();
+                    console.log('🔄 Auto-refresh data dari spreadsheet');
+                    initializeApp();
                 }
-            }, 60000);
+            }, 30000);
         });
     </script>
 </body>
