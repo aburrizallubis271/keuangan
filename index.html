@@ -1202,20 +1202,45 @@
                 }
             },
             
-            // 4. SIMPAN TRANSAKSI KE SPREADSHEET (PRIMARY)
+            // 4. SIMPAN TRANSAKSI KE SPREADSHEET (PRIMARY) - PERBAIKAN: Format data yang benar
             async saveTransaction(transactionData, isEdit = false) {
                 const action = isEdit ? 'update' : 'add';
                 
                 try {
-                    console.log(`💾 Saving transaction to spreadsheet (${action})...`);
+                    console.log(`💾 Saving transaction to spreadsheet (${action})...`, transactionData);
                     
-                    const result = await this.call(action, transactionData);
+                    // Format data sesuai yang diharapkan API
+                    const formattedData = {
+                        description: transactionData.description || '',
+                        amount: transactionData.amount || 0,
+                        type: transactionData.type || 'expense',
+                        category: transactionData.category || 'Umum',
+                        date: transactionData.date || new Date().toISOString().split('T')[0],
+                        notes: transactionData.notes || '',
+                        planningId: transactionData.planningId || '',
+                        user: transactionData.user || 'User'
+                    };
+                    
+                    // Tambah ID jika edit
+                    if (isEdit && transactionData.id) {
+                        formattedData.id = transactionData.id;
+                    }
+                    
+                    console.log('📤 Sending formatted data:', formattedData);
+                    
+                    const result = await this.call(action, formattedData);
                     
                     if (result.success) {
                         console.log('✅ Transaction saved to spreadsheet');
                         
-                        // Tambah ke pending untuk cache update
-                        this.addToPending('transaction', transactionData, action, result.data);
+                        // Update cache
+                        if (result.data && result.data.transactions) {
+                            localStorage.setItem('cache_transactions', JSON.stringify({
+                                data: result.data.transactions,
+                                timestamp: new Date().toISOString(),
+                                source: 'spreadsheet'
+                            }));
+                        }
                         
                         return {
                             success: true,
@@ -1225,26 +1250,19 @@
                     } else {
                         console.log('⚠️ Failed to save to spreadsheet, using local cache');
                         
-                        // Simpan ke local cache sebagai fallback
-                        this.saveToLocalFallback('transaction', transactionData, action);
-                        
                         return {
-                            success: true,
+                            success: false,
                             savedToSpreadsheet: false,
-                            savedLocally: true
+                            error: result.error
                         };
                     }
                     
                 } catch (error) {
                     console.error('❌ Error saving transaction:', error);
                     
-                    // Simpan ke local cache sebagai fallback
-                    this.saveToLocalFallback('transaction', transactionData, action);
-                    
                     return {
                         success: false,
                         savedToSpreadsheet: false,
-                        savedLocally: true,
                         error: error.message
                     };
                 }
@@ -1255,15 +1273,37 @@
                 const action = isEdit ? 'updatePlan' : 'addPlan';
                 
                 try {
-                    console.log(`💾 Saving plan to spreadsheet (${action})...`);
+                    console.log(`💾 Saving plan to spreadsheet (${action})...`, planData);
                     
-                    const result = await this.call(action, planData);
+                    // Format data sesuai yang diharapkan API
+                    const formattedData = {
+                        name: planData.name || '',
+                        target: planData.target || 0,
+                        type: planData.type || 'expense',
+                        notes: planData.notes || '',
+                        category: 'Planning'
+                    };
+                    
+                    // Tambah ID jika edit
+                    if (isEdit && planData.id) {
+                        formattedData.id = planData.id;
+                    }
+                    
+                    console.log('📤 Sending formatted plan data:', formattedData);
+                    
+                    const result = await this.call(action, formattedData);
                     
                     if (result.success) {
                         console.log('✅ Plan saved to spreadsheet');
                         
-                        // Tambah ke pending untuk cache update
-                        this.addToPending('plan', planData, action, result.data);
+                        // Update cache
+                        if (result.data && result.data.plans) {
+                            localStorage.setItem('cache_plans', JSON.stringify({
+                                data: result.data.plans,
+                                timestamp: new Date().toISOString(),
+                                source: 'spreadsheet'
+                            }));
+                        }
                         
                         return {
                             success: true,
@@ -1273,26 +1313,19 @@
                     } else {
                         console.log('⚠️ Failed to save to spreadsheet, using local cache');
                         
-                        // Simpan ke local cache sebagai fallback
-                        this.saveToLocalFallback('plan', planData, action);
-                        
                         return {
-                            success: true,
+                            success: false,
                             savedToSpreadsheet: false,
-                            savedLocally: true
+                            error: result.error
                         };
                     }
                     
                 } catch (error) {
                     console.error('❌ Error saving plan:', error);
                     
-                    // Simpan ke local cache sebagai fallback
-                    this.saveToLocalFallback('plan', planData, action);
-                    
                     return {
                         success: false,
                         savedToSpreadsheet: false,
-                        savedLocally: true,
                         error: error.message
                     };
                 }
@@ -1301,15 +1334,32 @@
             // 6. SIMPAN BUSINESS KE SPREADSHEET
             async saveBusiness(businessData) {
                 try {
-                    console.log('💾 Saving business to spreadsheet...');
+                    console.log('💾 Saving business to spreadsheet...', businessData);
                     
-                    const result = await this.call('addBusiness', businessData);
+                    // Format data sesuai yang diharapkan API
+                    const formattedData = {
+                        name: businessData.name || 'Data Usaha',
+                        investment: businessData.investment || 0,
+                        revenue: businessData.revenue || 0,
+                        date: businessData.date || new Date().toISOString().split('T')[0],
+                        pengeluaran: businessData.pengeluaran || 0
+                    };
+                    
+                    console.log('📤 Sending formatted business data:', formattedData);
+                    
+                    const result = await this.call('addBusiness', formattedData);
                     
                     if (result.success) {
                         console.log('✅ Business saved to spreadsheet');
                         
-                        // Tambah ke pending untuk cache update
-                        this.addToPending('business', businessData, 'addBusiness', result.data);
+                        // Update cache
+                        if (result.data && result.data.business) {
+                            localStorage.setItem('cache_business', JSON.stringify({
+                                data: result.data.business,
+                                timestamp: new Date().toISOString(),
+                                source: 'spreadsheet'
+                            }));
+                        }
                         
                         return {
                             success: true,
@@ -1319,74 +1369,108 @@
                     } else {
                         console.log('⚠️ Failed to save to spreadsheet, using local cache');
                         
-                        // Simpan ke local cache sebagai fallback
-                        this.saveToLocalFallback('business', businessData, 'addBusiness');
-                        
                         return {
-                            success: true,
+                            success: false,
                             savedToSpreadsheet: false,
-                            savedLocally: true
+                            error: result.error
                         };
                     }
                     
                 } catch (error) {
                     console.error('❌ Error saving business:', error);
                     
-                    // Simpan ke local cache sebagai fallback
-                    this.saveToLocalFallback('business', businessData, 'addBusiness');
-                    
                     return {
                         success: false,
                         savedToSpreadsheet: false,
-                        savedLocally: true,
                         error: error.message
                     };
                 }
             },
             
-            // 7. PENDING SYSTEM untuk sync data
-            addToPending(type, data, action, apiResponse = null) {
+            // 7. HAPUS DATA DARI SPREADSHEET
+            async deleteTransaction(transactionId) {
                 try {
-                    const pending = JSON.parse(localStorage.getItem('pending_updates') || '[]');
+                    console.log(`🗑️ Deleting transaction from spreadsheet: ${transactionId}`);
                     
-                    pending.push({
-                        type: type,
-                        action: action,
-                        data: data,
-                        apiResponse: apiResponse,
-                        timestamp: new Date().toISOString(),
-                        synced: apiResponse ? true : false
-                    });
+                    const result = await this.call('delete', { id: transactionId });
                     
-                    localStorage.setItem('pending_updates', JSON.stringify(pending));
-                    console.log(`📝 Added to pending: ${type} - ${action}`);
+                    if (result.success) {
+                        console.log('✅ Transaction deleted from spreadsheet');
+                        
+                        // Update cache
+                        if (result.data && result.data.transactions) {
+                            localStorage.setItem('cache_transactions', JSON.stringify({
+                                data: result.data.transactions,
+                                timestamp: new Date().toISOString(),
+                                source: 'spreadsheet'
+                            }));
+                        }
+                        
+                        return {
+                            success: true,
+                            deletedFromSpreadsheet: true
+                        };
+                    } else {
+                        console.log('⚠️ Failed to delete from spreadsheet');
+                        return {
+                            success: false,
+                            deletedFromSpreadsheet: false,
+                            error: result.error
+                        };
+                    }
                     
-                } catch (e) {
-                    console.error('Error adding to pending:', e);
+                } catch (error) {
+                    console.error('❌ Error deleting transaction:', error);
+                    return {
+                        success: false,
+                        deletedFromSpreadsheet: false,
+                        error: error.message
+                    };
                 }
             },
             
-            // 8. FALLBACK SYSTEM untuk offline mode
-            saveToLocalFallback(type, data, action) {
+            async deletePlan(planId) {
                 try {
-                    const fallback = JSON.parse(localStorage.getItem('local_fallback') || '[]');
+                    console.log(`🗑️ Deleting plan from spreadsheet: ${planId}`);
                     
-                    fallback.push({
-                        type: type,
-                        action: action,
-                        data: data,
-                        timestamp: new Date().toISOString()
-                    });
+                    const result = await this.call('deletePlan', { id: planId });
                     
-                    localStorage.setItem('local_fallback', JSON.stringify(fallback));
-                    console.log(`💾 Saved to local fallback: ${type} - ${action}`);
+                    if (result.success) {
+                        console.log('✅ Plan deleted from spreadsheet');
+                        
+                        // Update cache
+                        if (result.data && result.data.plans) {
+                            localStorage.setItem('cache_plans', JSON.stringify({
+                                data: result.data.plans,
+                                timestamp: new Date().toISOString(),
+                                source: 'spreadsheet'
+                            }));
+                        }
+                        
+                        return {
+                            success: true,
+                            deletedFromSpreadsheet: true
+                        };
+                    } else {
+                        console.log('⚠️ Failed to delete from spreadsheet');
+                        return {
+                            success: false,
+                            deletedFromSpreadsheet: false,
+                            error: result.error
+                        };
+                    }
                     
-                } catch (e) {
-                    console.error('Error saving to fallback:', e);
+                } catch (error) {
+                    console.error('❌ Error deleting plan:', error);
+                    return {
+                        success: false,
+                        deletedFromSpreadsheet: false,
+                        error: error.message
+                    };
                 }
             },
             
-            // 9. TEST KONEKSI API
+            // 8. TEST KONEKSI API
             async testConnection() {
                 try {
                     const result = await this.call('ping', {});
@@ -1401,86 +1485,6 @@
                         connected: false,
                         message: 'Connection error: ' + error.message
                     };
-                }
-            },
-            
-            // 10. SYNC PENDING UPDATES
-            async syncPendingUpdates() {
-                try {
-                    const pending = JSON.parse(localStorage.getItem('pending_updates') || '[]');
-                    
-                    if (pending.length === 0) {
-                        console.log('✅ No pending updates to sync');
-                        return { synced: 0, total: 0 };
-                    }
-                    
-                    console.log(`🔄 Syncing ${pending.length} pending updates...`);
-                    
-                    let syncedCount = 0;
-                    const updatedPending = [];
-                    
-                    for (const item of pending) {
-                        if (!item.synced && item.apiResponse) {
-                            // Update cache dengan data dari API
-                            this.updateCacheFromResponse(item.type, item.apiResponse);
-                            syncedCount++;
-                        } else {
-                            updatedPending.push(item);
-                        }
-                    }
-                    
-                    localStorage.setItem('pending_updates', JSON.stringify(updatedPending));
-                    
-                    console.log(`✅ ${syncedCount} updates synced to cache`);
-                    return { synced: syncedCount, total: pending.length };
-                    
-                } catch (error) {
-                    console.error('❌ Error syncing pending updates:', error);
-                    return { synced: 0, total: 0 };
-                }
-            },
-            
-            // 11. UPDATE CACHE DARI API RESPONSE
-            updateCacheFromResponse(type, apiResponse) {
-                try {
-                    const timestamp = new Date().toISOString();
-                    
-                    switch(type) {
-                        case 'transaction':
-                            if (apiResponse.transactions) {
-                                localStorage.setItem('cache_transactions', JSON.stringify({
-                                    data: apiResponse.transactions,
-                                    timestamp: timestamp,
-                                    source: 'spreadsheet'
-                                }));
-                            }
-                            break;
-                            
-                        case 'plan':
-                            if (apiResponse.plans) {
-                                localStorage.setItem('cache_plans', JSON.stringify({
-                                    data: apiResponse.plans,
-                                    timestamp: timestamp,
-                                    source: 'spreadsheet'
-                                }));
-                            }
-                            break;
-                            
-                        case 'business':
-                            if (apiResponse.business) {
-                                localStorage.setItem('cache_business', JSON.stringify({
-                                    data: apiResponse.business,
-                                    timestamp: timestamp,
-                                    source: 'spreadsheet'
-                                }));
-                            }
-                            break;
-                    }
-                    
-                    console.log(`🔄 Cache updated for ${type}`);
-                    
-                } catch (e) {
-                    console.error('Error updating cache:', e);
                 }
             }
         };
@@ -1544,59 +1548,73 @@
                 
                 // UPDATE APPDATA DENGAN DATA YANG DILOAD
                 if (loadedData.data) {
-                    // Transactions
-                    if (loadedData.data.transactions) {
-                        appData.transactions = loadedData.data.transactions.map(t => ({
-                            id: t.id || `trans_${Date.now()}`,
-                            description: t.description || '',
-                            amount: parseFloat(t.amount) || 0,
-                            type: t.type || 'expense',
-                            category: t.category || 'Umum',
-                            date: t.date || new Date().toISOString().split('T')[0],
-                            planningId: t.planningId || null,
-                            notes: t.notes || ''
-                        }));
+                    // PERBAIKAN: Transactions - handle berbagai format data
+                    if (loadedData.data.transactions && Array.isArray(loadedData.data.transactions)) {
+                        appData.transactions = loadedData.data.transactions.map(t => {
+                            // Debug: lihat struktur data
+                            console.log('Transaction structure:', t);
+                            
+                            // Cari jumlah transaksi dari berbagai field
+                            let amount = 0;
+                            if (t.amount) amount = parseFloat(t.amount);
+                            else if (t.jumlah) amount = parseFloat(t.jumlah);
+                            else if (t[3]) amount = parseFloat(t[3]) || 0; // Kolom ke-4
+                            
+                            // Cari jenis transaksi
+                            let type = 'expense';
+                            if (t.type === 'income' || t.jenis === 'income' || t.jenis === 'pemasukan') {
+                                type = 'income';
+                            }
+                            
+                            // Cari deskripsi
+                            let description = '';
+                            if (t.description) description = t.description;
+                            else if (t.keterangan) description = t.keterangan;
+                            else if (t[1]) description = t[1] || ''; // Kolom ke-2
+                            
+                            return {
+                                id: t.id || `trans_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                                description: description,
+                                amount: amount,
+                                type: type,
+                                category: t.category || t.kategori || 'Umum',
+                                date: t.date || new Date().toISOString().split('T')[0],
+                                planningId: t.planningId || null,
+                                notes: t.notes || t.catatan || ''
+                            };
+                        }).filter(t => t.description && !isNaN(t.amount));
+                        
+                        console.log(`📊 Loaded ${appData.transactions.length} transactions`);
                     }
                     
                     // Plans
-                    if (loadedData.data.plans) {
-                        appData.planningTemplates = loadedData.data.plans.map(p => ({
-                            id: p.id || `plan_${Date.now()}`,
-                            name: p.name || 'Unnamed Plan',
-                            type: p.type === 'income' ? 'Pemasukan' : 
-                                  p.type === 'Tabungan' ? 'Tabungan' :
-                                  p.type === 'Investasi' ? 'Investasi' : 'Pengeluaran',
-                            target: parseFloat(p.target) || 0,
-                            description: p.notes || p.description || '',
-                            category: p.category || 'Planning'
-                        }));
+                    if (loadedData.data.plans && Array.isArray(loadedData.data.plans)) {
+                        appData.planningTemplates = loadedData.data.plans.map(p => {
+                            return {
+                                id: p.id || `plan_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                                name: p.name || p.nama || 'Unnamed Plan',
+                                type: p.type === 'income' ? 'Pemasukan' : 
+                                      p.type === 'Tabungan' ? 'Tabungan' :
+                                      p.type === 'Investasi' ? 'Investasi' : 
+                                      p.type === 'Pengeluaran' ? 'Pengeluaran' : 'Pengeluaran',
+                                target: parseFloat(p.target || p.targetAmount || 0),
+                                description: p.description || p.desc || p.notes || '',
+                                category: 'Planning'
+                            };
+                        }).filter(p => p.name && p.name !== 'Unnamed Plan');
                     }
                     
                     // Business
-                    if (loadedData.data.business) {
+                    if (loadedData.data.business && Array.isArray(loadedData.data.business)) {
                         appData.business = loadedData.data.business.map(b => ({
-                            id: b.id || `business_${Date.now()}`,
-                            modal: parseFloat(b.modal) || parseFloat(b.investment) || 0,
-                            pemasukan: parseFloat(b.pemasukan) || parseFloat(b.revenue) || 0,
-                            pengeluaran: parseFloat(b.pengeluaran) || 0,
+                            id: b.id || `business_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                            modal: parseFloat(b.modal || b.investment || 0),
+                            pemasukan: parseFloat(b.pemasukan || b.revenue || 0),
+                            pengeluaran: parseFloat(b.pengeluaran || 0),
                             date: b.date || new Date().toISOString().split('T')[0],
                             name: b.name || 'Data Usaha'
                         }));
                     }
-                    
-                    // Sync pending updates jika online
-                    if (appData.apiConnected) {
-                        setTimeout(async () => {
-                            const syncResult = await API_CONFIG.syncPendingUpdates();
-                            if (syncResult.synced > 0) {
-                                console.log(`🔄 ${syncResult.synced} updates synced`);
-                                updateDisplay();
-                            }
-                        }, 1000);
-                    }
-                    
-                    // Inisialisasi monthly planning
-                    initializeMonthlyPlanning();
                     
                     // Update storage mode display
                     document.getElementById('storageMode').textContent = 
@@ -1605,9 +1623,20 @@
                         'Local Cache (Offline)';
                         
                 } else {
-                    console.log('⚠️ No data loaded');
-                    initializeMonthlyPlanning();
+                    console.log('⚠️ No data loaded from API');
                 }
+                
+                // Load income sources dari localStorage
+                try {
+                    const localIncome = JSON.parse(localStorage.getItem('local_income') || '[]');
+                    appData.incomeSources = localIncome;
+                } catch (e) {
+                    console.error('Error loading income sources:', e);
+                    appData.incomeSources = [];
+                }
+                
+                // Inisialisasi monthly planning
+                initializeMonthlyPlanning();
                 
             } catch (error) {
                 console.error('❌ Initialization error:', error);
@@ -1689,7 +1718,7 @@
             }
             
             const incomeSource = {
-                id: 'income_' + Date.now(),
+                id: 'income_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
                 name: name,
                 amount: amount,
                 description: description,
@@ -1703,22 +1732,24 @@
             localIncome.push(incomeSource);
             localStorage.setItem('local_income', JSON.stringify(localIncome));
             
-            // Buat transaksi terkait
+            // PERBAIKAN: Buat transaksi terkait dengan format yang benar
             const transData = {
                 description: `${name} (Pemasukan Tetap)`,
                 amount: amount,
                 type: 'income',
                 category: 'Pemasukan Tetap',
                 date: new Date().toISOString().split('T')[0],
-                notes: description
+                notes: description,
+                user: 'User'
             };
             
             // Simpan ke spreadsheet jika online
             if (appData.apiConnected) {
                 await API_CONFIG.saveTransaction(transData, false);
             } else {
-                // Simpan ke fallback
-                API_CONFIG.saveToLocalFallback('transaction', transData, 'add');
+                // Simpan ke data lokal jika offline
+                transData.id = 'trans_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                appData.transactions.push(transData);
             }
             
             // Reset form
@@ -1784,12 +1815,19 @@
         }
         
         // ============================================
-        // FUNGSI TRANSAKSI
+        // FUNGSI TRANSAKSI - PERBAIKAN BESAR
         // ============================================
         async function saveTransaction(formData, isEdit = false) {
             showLoading();
             
             try {
+                // PERBAIKAN: Tambah ID jika tidak ada (untuk edit)
+                if (!formData.id) {
+                    formData.id = 'trans_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                }
+                
+                console.log('💾 Saving transaction:', formData);
+                
                 // Gunakan API_CONFIG untuk simpan ke spreadsheet
                 const result = await API_CONFIG.saveTransaction(formData, isEdit);
                 
@@ -1797,7 +1835,18 @@
                     if (result.savedToSpreadsheet) {
                         // Update data dari response API
                         if (result.data && result.data.transactions) {
-                            appData.transactions = result.data.transactions;
+                            appData.transactions = result.data.transactions.map(t => {
+                                return {
+                                    id: t.id || `trans_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                                    description: t.description || t.keterangan || '',
+                                    amount: parseFloat(t.amount || t.jumlah || 0),
+                                    type: t.type || (t.jenis === 'pemasukan' ? 'income' : 'expense') || 'expense',
+                                    category: t.category || t.kategori || 'Umum',
+                                    date: t.date || new Date().toISOString().split('T')[0],
+                                    planningId: t.planningId || null,
+                                    notes: t.notes || t.catatan || ''
+                                };
+                            });
                         }
                         showToast(`Transaksi ${isEdit ? 'diperbarui' : 'disimpan'} ke database utama!`, 'success');
                     } else {
@@ -1806,29 +1855,45 @@
                             const index = appData.transactions.findIndex(t => t.id === formData.id);
                             if (index !== -1) {
                                 appData.transactions[index] = formData;
+                            } else {
+                                appData.transactions.push(formData);
                             }
                         } else {
-                            appData.transactions.push({
-                                ...formData,
-                                id: formData.id || 'trans_' + Date.now()
-                            });
+                            appData.transactions.push(formData);
                         }
-                        showToast(`Transaksi ${isEdit ? 'diperbarui' : 'disimpan'} secara lokal (akan sync nanti)`, 'warning');
+                        showToast(`Transaksi ${isEdit ? 'diperbarui' : 'disimpan'} secara lokal`, 'warning');
+                    }
+                    
+                    // PERBAIKAN: Update planning jika ada planningId
+                    if (formData.planningId) {
+                        updatePlanningUsage(formData.planningId, formData.type, formData.amount);
                     }
                     
                     return true;
                 } else {
-                    showToast('Gagal menyimpan transaksi', 'error');
+                    showToast('Gagal menyimpan transaksi: ' + (result.error || 'Unknown error'), 'error');
                     return false;
                 }
                 
             } catch (error) {
                 console.error('Error saving transaction:', error);
-                showToast('Error menyimpan transaksi', 'error');
+                showToast('Error menyimpan transaksi: ' + error.message, 'error');
                 return false;
                 
             } finally {
                 hideLoading();
+            }
+        }
+        
+        // PERBAIKAN: Fungsi untuk update penggunaan planning
+        function updatePlanningUsage(planningId, type, amount) {
+            const planning = getCurrentMonthPlanning().find(p => p.id === planningId);
+            if (!planning) return;
+            
+            if (type === 'expense' && (planning.type === 'Pengeluaran' || planning.type === 'Tabungan' || planning.type === 'Investasi')) {
+                planning.used = (planning.used || 0) + amount;
+            } else if (type === 'income' && planning.type === 'Pemasukan') {
+                planning.collected = (planning.collected || 0) + amount;
             }
         }
         
@@ -1858,18 +1923,22 @@
                 showLoading();
                 
                 try {
-                    // Coba hapus dari spreadsheet
+                    // Coba hapus dari spreadsheet jika online
+                    let deleteFromSpreadsheet = false;
                     if (appData.apiConnected) {
-                        await API_CONFIG.call('delete', { id: transactionId });
+                        const result = await API_CONFIG.deleteTransaction(transactionId);
+                        deleteFromSpreadsheet = result.success;
                     }
                     
                     // Hapus dari data lokal
                     appData.transactions = appData.transactions.filter(t => t.id !== transactionId);
                     
-                    // Update cache
-                    API_CONFIG.addToPending('transaction', { id: transactionId }, 'delete');
+                    if (deleteFromSpreadsheet) {
+                        showToast('Transaksi berhasil dihapus dari database utama!', 'success');
+                    } else {
+                        showToast('Transaksi dihapus secara lokal', 'warning');
+                    }
                     
-                    showToast('Transaksi berhasil dihapus!', 'success');
                     updateDisplay();
                     
                 } catch (error) {
@@ -1905,8 +1974,8 @@
             const planningDesc = document.getElementById('planningDesc').value.trim();
             const editingPlanningId = document.getElementById('editingPlanningId').value;
             
-            if (planningTarget <= 0) {
-                showToast('Target harus lebih dari 0!', 'error');
+            if (!planningName || planningTarget <= 0) {
+                showToast('Nama dan target planning harus diisi dengan benar!', 'error');
                 return;
             }
             
@@ -1941,7 +2010,7 @@
                     }
                 } else {
                     // Add new planning
-                    planData.id = 'plan_' + Date.now();
+                    planData.id = 'plan_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
                     
                     // Add to local data
                     const newPlan = {
@@ -1973,10 +2042,13 @@
                     });
                 }
                 
-                // Simpan ke spreadsheet
-                const result = await API_CONFIG.savePlan(planData, isEdit);
+                // Simpan ke spreadsheet jika online
+                let saveResult = { success: false };
+                if (appData.apiConnected) {
+                    saveResult = await API_CONFIG.savePlan(planData, isEdit);
+                }
                 
-                if (result.success) {
+                if (!appData.apiConnected || saveResult.success) {
                     const successMessage = isEdit ? 
                         `Planning "${planningName}" berhasil diperbarui!` :
                         `Planning "${planningName}" berhasil ditambahkan!`;
@@ -1990,12 +2062,12 @@
                     // Update display
                     updateDisplay();
                 } else {
-                    showToast('Gagal menyimpan planning', 'error');
+                    showToast('Gagal menyimpan planning ke spreadsheet', 'error');
                 }
                 
             } catch (error) {
                 console.error('Error saving planning:', error);
-                showToast('Error menyimpan planning', 'error');
+                showToast('Error menyimpan planning: ' + error.message, 'error');
             } finally {
                 hideLoading();
             }
@@ -2003,14 +2075,32 @@
         
         function editPlanning(planningId) {
             // Ekstrak template ID dari planning ID
-            const templateId = planningId.split('_').slice(0, -1).join('_');
-            const template = appData.planningTemplates.find(t => t.id === templateId);
+            const parts = planningId.split('_');
+            // Cari template ID (hapus suffix bulan)
+            const templateId = appData.planningTemplates.find(t => 
+                planningId.startsWith(t.id + '_') || t.id === planningId
+            )?.id;
             
+            if (!templateId) {
+                // Coba cari langsung
+                const template = appData.planningTemplates.find(t => t.id === planningId);
+                if (!template) {
+                    showToast('Planning tidak ditemukan!', 'error');
+                    return;
+                }
+                return openEditPlanningModal(template);
+            }
+            
+            const template = appData.planningTemplates.find(t => t.id === templateId);
             if (!template) {
-                showToast('Planning tidak ditemukan!', 'error');
+                showToast('Template planning tidak ditemukan!', 'error');
                 return;
             }
             
+            openEditPlanningModal(template);
+        }
+        
+        function openEditPlanningModal(template) {
             document.getElementById('planningModalTitle').textContent = 'Edit Planning';
             document.getElementById('editingPlanningId').value = template.id;
             document.getElementById('planningName').value = template.name;
@@ -2023,9 +2113,10 @@
         }
         
         async function deletePlanning(planningId) {
-            // Ekstrak template ID
-            const templateId = planningId.split('_').slice(0, -1).join('_');
-            const template = appData.planningTemplates.find(t => t.id === templateId);
+            // Cari template yang sesuai
+            const template = appData.planningTemplates.find(t => 
+                planningId.startsWith(t.id + '_') || t.id === planningId
+            );
             
             if (!template) {
                 showToast('Planning tidak ditemukan!', 'error');
@@ -2034,7 +2125,7 @@
             
             let message = `Hapus planning "${template.name}"?`;
             const relatedTransactions = appData.transactions.filter(t => 
-                t.planningId === planningId || t.planningId === templateId
+                t.planningId === planningId || t.planningId === template.id
             );
             
             if (relatedTransactions.length > 0) {
@@ -2051,36 +2142,39 @@
             showLoading();
             
             try {
-                // Coba hapus dari spreadsheet
+                // Coba hapus dari spreadsheet jika online
+                let deleteFromSpreadsheet = false;
                 if (appData.apiConnected) {
-                    await API_CONFIG.call('deletePlan', { id: templateId });
+                    const result = await API_CONFIG.deletePlan(template.id);
+                    deleteFromSpreadsheet = result.success;
                 }
                 
                 // Update local data
-                appData.planningTemplates = appData.planningTemplates.filter(t => t.id !== templateId);
+                appData.planningTemplates = appData.planningTemplates.filter(t => t.id !== template.id);
                 
-                // Hapus dari monthly planning
-                const monthKey = getCurrentMonthKey();
-                if (appData.monthlyPlanning[monthKey]) {
+                // Hapus dari monthly planning semua bulan
+                for (const monthKey in appData.monthlyPlanning) {
                     appData.monthlyPlanning[monthKey] = appData.monthlyPlanning[monthKey].filter(
-                        p => p.templateId !== templateId
+                        p => p.templateId !== template.id
                     );
                 }
                 
                 // Hapus transaksi terkait
                 appData.transactions = appData.transactions.filter(t => 
-                    t.planningId !== planningId && t.planningId !== templateId
+                    t.planningId !== planningId && t.planningId !== template.id
                 );
                 
-                // Update cache
-                API_CONFIG.addToPending('plan', { id: templateId }, 'deletePlan');
+                if (deleteFromSpreadsheet) {
+                    showToast(`Planning "${template.name}" dihapus dari database utama!`, 'success');
+                } else {
+                    showToast(`Planning "${template.name}" dihapus secara lokal`, 'warning');
+                }
                 
-                showToast(`Planning "${template.name}" dihapus`, 'success');
                 updateDisplay();
                 
             } catch (error) {
                 console.error('Error deleting planning:', error);
-                showToast('Gagal menghapus planning', 'error');
+                showToast('Gagal menghapus planning: ' + error.message, 'error');
             } finally {
                 hideLoading();
             }
@@ -2117,20 +2211,27 @@
                     if (result.savedToSpreadsheet) {
                         // Update dari response API
                         if (result.data && result.data.business) {
-                            appData.business = result.data.business;
+                            appData.business = result.data.business.map(b => ({
+                                id: b.id || `business_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                                modal: parseFloat(b.modal || b.investment || 0),
+                                pemasukan: parseFloat(b.pemasukan || b.revenue || 0),
+                                pengeluaran: parseFloat(b.pengeluaran || 0),
+                                date: b.date || new Date().toISOString().split('T')[0],
+                                name: b.name || 'Data Usaha'
+                            }));
                         }
                         showToast('Data usaha berhasil disimpan ke database utama!', 'success');
                     } else {
                         // Simpan ke lokal
                         appData.business.push({
-                            id: 'business_' + Date.now(),
+                            id: 'business_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
                             modal: modal,
                             pemasukan: pemasukan,
                             pengeluaran: pengeluaran,
                             date: date,
                             name: 'Data Usaha'
                         });
-                        showToast('Data usaha disimpan secara lokal (akan sync nanti)', 'warning');
+                        showToast('Data usaha disimpan secara lokal', 'warning');
                     }
                     
                     document.getElementById('businessModal').value = '';
@@ -2140,12 +2241,12 @@
                     
                     updateDisplay();
                 } else {
-                    showToast('Gagal menyimpan data usaha', 'error');
+                    showToast('Gagal menyimpan data usaha: ' + (result.error || 'Unknown error'), 'error');
                 }
                 
             } catch (error) {
                 console.error('Error saving business:', error);
-                showToast('Error menyimpan data usaha', 'error');
+                showToast('Error menyimpan data usaha: ' + error.message, 'error');
             } finally {
                 hideLoading();
             }
@@ -2365,7 +2466,7 @@
         }
         
         // ============================================
-        // FUNGSI TAMPILAN
+        // FUNGSI TAMPILAN - PERBAIKAN BESAR
         // ============================================
         function updateDisplay() {
             console.log('🔄 Updating display...');
@@ -2392,7 +2493,7 @@
             // Update transaction history
             updateTransactionHistory();
             
-            // Update dashboard
+            // PERBAIKAN: Update dashboard dengan perhitungan yang benar
             updateDashboard();
             
             // Update business
@@ -2411,16 +2512,29 @@
         }
         
         function updateDashboard() {
-            const totalIncome = appData.incomeSources.reduce((sum, income) => sum + income.amount, 0) +
-                               appData.transactions
-                                   .filter(t => t.type === 'income')
-                                   .reduce((sum, t) => sum + t.amount, 0);
+            // PERBAIKAN: Hitung total pemasukan dari semua sumber
+            const incomeFromSources = appData.incomeSources.reduce((sum, income) => sum + income.amount, 0);
             
+            const incomeFromTransactions = appData.transactions
+                .filter(t => t.type === 'income')
+                .reduce((sum, t) => sum + t.amount, 0);
+            
+            const totalIncome = incomeFromSources + incomeFromTransactions;
+            
+            // PERBAIKAN: Hitung total pengeluaran dengan benar
             const totalExpense = appData.transactions
                 .filter(t => t.type === 'expense')
                 .reduce((sum, t) => sum + t.amount, 0);
             
             const balance = totalIncome - totalExpense;
+            
+            console.log('📊 Dashboard stats:', {
+                incomeFromSources,
+                incomeFromTransactions,
+                totalIncome,
+                totalExpense,
+                balance
+            });
             
             document.getElementById('totalIncome').textContent = formatCurrency(totalIncome);
             document.getElementById('totalExpense').textContent = formatCurrency(totalExpense);
@@ -3016,7 +3130,7 @@
                 });
             });
             
-            // Transaction form submit
+            // Transaction form submit - PERBAIKAN: Format data yang benar
             document.getElementById('transactionForm').addEventListener('submit', async function(e) {
                 e.preventDefault();
                 
@@ -3038,6 +3152,11 @@
                     return;
                 }
                 
+                if (!description) {
+                    showToast('Keterangan harus diisi!', 'error');
+                    return;
+                }
+                
                 const formData = {
                     description: description,
                     amount: amount,
@@ -3046,13 +3165,11 @@
                     date: transDate,
                     user: 'User',
                     notes: '',
-                    planningId: planningId || null
+                    planningId: planningId || ''
                 };
                 
                 if (editingTransactionId) {
                     formData.id = editingTransactionId;
-                } else {
-                    formData.id = 'trans_' + Date.now();
                 }
                 
                 const isEdit = !!editingTransactionId;
